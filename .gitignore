@@ -120,3 +120,17 @@ Desktop.ini
 # Environment variables
 .env
 .env.*
+
+# json files with sensitive information
+*.json
+
+# zip files
+*.zip
+*.tar.gz
+*.tar.bz2
+*.rar
+*.7z
+*.gz
+*.bz2
+*.xz
+*.tgz
