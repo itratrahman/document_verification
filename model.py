@@ -23,6 +23,9 @@ from torch.utils.data import DataLoader, random_split  # used for batching and d
 # Import torchvision datasets and transforms for image loading and preprocessing
 from torchvision import datasets, transforms, models  # used for image datasets, transforms, and pretrained models
 
+# Import PIL Image for loading images
+from PIL import Image  # used for loading and converting image files
+
 # Import time to measure training duration and create Unix timestamps
 import time  # used to compute elapsed time and epoch time
 
@@ -148,10 +151,27 @@ def set_seed(seed):
         logger.info("CUDA is not available; only CPU seeds set")  # log that only CPU is used
 
 
+class CustomDataset(torch.utils.data.Dataset):
+    """Custom dataset class for loading images with labels."""
+    def __init__(self, samples, transform=None):  # initialize with samples and transform
+        self.samples = samples  # store sample list
+        self.transform = transform  # store transform
+    
+    def __len__(self):  # return dataset length
+        return len(self.samples)  # number of samples
+    
+    def __getitem__(self, idx):  # get single sample
+        img_path, label = self.samples[idx]  # get sample path and label
+        img = Image.open(img_path).convert('RGB')  # load image as RGB
+        if self.transform:  # if transform provided
+            img = self.transform(img)  # apply transform
+        return img, label  # return image and label
+
+
 def create_dataloaders(data_dir, batch_size, val_split, seed):
     """
-    Create training and validation DataLoaders from an ImageFolder dataset.
-    Assumes data_dir has two subfolders: 'positive' and 'negative'.
+    Create training and validation DataLoaders from specified directories.
+    Loads positive class from './Original/' and negative class from './random_doc_images/'.
     Also computes class weights based on class frequencies.
     """
     # Log that we are starting DataLoader creation
@@ -175,17 +195,43 @@ def create_dataloaders(data_dir, batch_size, val_split, seed):
         transforms.Normalize(mean=imagenet_mean, std=imagenet_std),  # normalize tensor to ImageNet stats
     ])  # composed transforms for data augmentation and normalization
 
-    # Create an ImageFolder dataset; subdirectories map to class labels
-    full_dataset = datasets.ImageFolder(root=data_dir, transform=transform)  # dataset with labels inferred from folder names
+    # Define paths for positive and negative class directories
+    positive_dir = os.path.join(data_dir, "Original")  # positive class: license images
+    negative_dir = os.path.join(data_dir, "random_doc_images")  # negative class: other documents
 
-    # Log the mapping from class names to indices
-    logger.info(f"Class to index mapping: {full_dataset.class_to_idx}")  # show mapping like {'negative': 0, 'positive': 1}
+    # Log the directories being used
+    logger.info(f"Positive class directory: {positive_dir}")  # record positive dir
+    logger.info(f"Negative class directory: {negative_dir}")  # record negative dir
 
-    # Get the total number of samples in the dataset
-    dataset_size = len(full_dataset)  # total number of images
+    # Load positive class (1) images from Original directory
+    positive_dataset = datasets.ImageFolder(root=positive_dir, transform=transform)  # positive class dataset
+    
+    # Load negative class (0) images from random_doc_images directory (includes all subdirectories)
+    negative_dataset = datasets.ImageFolder(root=negative_dir, transform=transform)  # negative class dataset
+
+    # Adjust class labels for positive dataset (map 0->1 since Original has only one class)
+    positive_samples = [(img, 1) for img, _ in positive_dataset.samples]  # relabel positive images to class 1
+    
+    # Adjust class labels for negative dataset (map any label->0)
+    negative_samples = [(img, 0) for img, _ in negative_dataset.samples]  # relabel negative images to class 0
+
+    # Combine all samples from both classes
+    all_samples = positive_samples + negative_samples  # merged sample list
+
+    # Get the total number of samples
+    dataset_size = len(all_samples)  # total number of images
 
     # Log the total dataset size
     logger.info(f"Total number of samples in dataset: {dataset_size}")  # record dataset size
+
+    # Log class distribution
+    positive_count = len(positive_samples)  # count of positive samples
+    negative_count = len(negative_samples)  # count of negative samples
+    logger.info(f"Positive class samples: {positive_count}, Negative class samples: {negative_count}")  # record class distribution
+    logger.info(f"Class to index mapping: {{'negative': 0, 'positive': 1}}")  # show mapping
+
+    # Create the full dataset from combined samples
+    full_dataset = CustomDataset(all_samples, transform=transform)  # custom dataset with all samples
 
     # Compute the number of validation samples using the val_split fraction
     val_size = int(dataset_size * val_split)  # number of samples for validation
@@ -196,8 +242,8 @@ def create_dataloaders(data_dir, batch_size, val_split, seed):
     # Log the train/val split sizes
     logger.info(f"Train size: {train_size}, Validation size: {val_size}")  # record split sizes
 
-    # Extract the list of targets (class indices) for all samples
-    targets = full_dataset.targets  # list of class indices for each image
+    # Extract labels from all samples for class weight computation
+    targets = [label for _, label in all_samples]  # list of class labels
 
     # Convert the targets list to a torch tensor
     target_tensor = torch.tensor(targets, dtype=torch.long)  # tensor of labels
@@ -208,14 +254,14 @@ def create_dataloaders(data_dir, batch_size, val_split, seed):
     # Log the raw class counts
     logger.info(f"Raw class counts (by index): {class_counts.tolist()}")  # record counts for each class
 
-    # Compute the total number of classes from the length of class_counts
+    # Compute the total number of classes
     num_classes = len(class_counts)  # number of distinct class indices
 
     # Compute total number of samples as a float for weight calculation
     total_samples = float(dataset_size)  # float version of dataset size
 
     # Compute class weights inversely proportional to class frequencies
-    # This downweights classes with many samples (e.g., majority positive class)
+    # This downweights classes with many samples
     class_weights = total_samples / (num_classes * class_counts.float())  # inverse frequency weighting
 
     # Log the computed class weights
@@ -252,7 +298,7 @@ def create_dataloaders(data_dir, batch_size, val_split, seed):
     logger.info("Train and validation DataLoaders successfully created")  # confirm dataloader creation
 
     # Return the train DataLoader, validation DataLoader, number of classes, and class weights
-    return train_loader, val_loader, len(full_dataset.classes), class_weights  # output for downstream use
+    return train_loader, val_loader, num_classes, class_weights  # output for downstream use
 
 
 def create_model(num_classes):
