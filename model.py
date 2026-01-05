@@ -37,14 +37,17 @@ from datetime import datetime  # used to format current date/time for log filena
 # Hardcoded configuration block
 # -----------------------------
 
+# Get the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # script directory
+
 # Define the root directory containing 'positive' and 'negative' subfolders
-DATA_DIR = "/path/to/your/data_root"  # <-- CHANGE THIS TO YOUR DATA PATH
+DATA_DIR = os.path.join(SCRIPT_DIR, "data")  # data directory relative to script
 
 # Define the directory where model checkpoints will be saved
-OUTPUT_DIR = "./checkpoints"  # directory for model .pt files
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "checkpoints")  # checkpoints directory relative to script
 
 # Define the directory where log files will be saved
-LOG_DIR = "./logs"  # directory to store per-run log files
+LOG_DIR = os.path.join(SCRIPT_DIR, "logs")  # logs directory relative to script
 
 # Define the number of epochs for training
 NUM_EPOCHS = 10  # number of passes through the full training set
