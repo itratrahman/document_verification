@@ -1,0 +1,10 @@
+numpy
+matplotlib
+scipy
+torch
+torchvision
+paddlepaddle
+paddleocr
+opencv-python
+retinaface
+Pillow
