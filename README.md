@@ -140,7 +140,9 @@ Edit the following parameters in `model.py` to customize training:
 
 ## License
 
-Specify your project license here.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+The MIT License is a permissive open-source license that allows you to freely use, modify, and distribute this software in personal and commercial projects, provided you include the original license and copyright notice.
 
 ---
 
