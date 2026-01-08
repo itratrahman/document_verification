@@ -134,3 +134,7 @@ Desktop.ini
 *.bz2
 *.xz
 *.tgz
+
+# Logs and reports
+logs/
+

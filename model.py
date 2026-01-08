@@ -75,17 +75,8 @@ SEED = 42  # fixed seed for deterministic behavior
 # Create the log directory if it does not already exist
 os.makedirs(LOG_DIR, exist_ok=True)  # ensure ./logs exists
 
-# Get the current local date and time
-run_dt = datetime.now()  # capture current datetime object
-
-# Format the date and time as YYYYMMDD_HHMMSS for readability
-date_str = run_dt.strftime("%Y%m%d_%H%M%S")  # formatted timestamp string
-
-# Get the current Unix epoch time in seconds (Linux time)
-epoch_time = int(time.time())  # integer Unix timestamp
-
-# Build a unique log filename that includes date/time and Unix epoch
-LOG_FILENAME = os.path.join(LOG_DIR, f"train_log_{date_str}_{epoch_time}.txt")  # full log file path
+# Use a fixed log filename for all runs
+LOG_FILENAME = os.path.join(LOG_DIR, "train_log.txt")  # single log file for all runs
 
 # Create a logger object for this module
 logger = logging.getLogger(__name__)  # module-level logger
@@ -99,8 +90,8 @@ logger.propagate = False  # ensure we control handlers explicitly
 # Define the log message format (timestamp, level, message)
 log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")  # formatter for log records
 
-# Create a file handler that writes logs to the per-run log file
-file_handler = logging.FileHandler(LOG_FILENAME)  # handler that writes to text file
+# Create a file handler that appends logs to the single log file
+file_handler = logging.FileHandler(LOG_FILENAME, mode='a')  # handler that appends to text file
 
 # Set the logging level for the file handler
 file_handler.setLevel(logging.INFO)  # log INFO and above to file
@@ -125,6 +116,9 @@ logger.addHandler(stream_handler)  # attach console handler
 
 # Log the path of the log file being used for this run
 logger.info(f"Logging to file: {LOG_FILENAME}")  # message indicating log file location
+
+# Log a separator to distinguish between different runs
+logger.info("=" * 80)  # visual separator between runs
 
 
 def set_seed(seed):
@@ -203,17 +197,24 @@ def create_dataloaders(data_dir, batch_size, val_split, seed):
     logger.info(f"Positive class directory: {positive_dir}")  # record positive dir
     logger.info(f"Negative class directory: {negative_dir}")  # record negative dir
 
-    # Load positive class (1) images from Original directory
-    positive_dataset = datasets.ImageFolder(root=positive_dir, transform=transform)  # positive class dataset
-    
-    # Load negative class (0) images from random_doc_images directory (includes all subdirectories)
-    negative_dataset = datasets.ImageFolder(root=negative_dir, transform=transform)  # negative class dataset
+    # Helper function to recursively find all image files in a directory tree
+    def get_image_paths(root_dir):
+        """Recursively collect all image file paths from directory and subdirectories."""
+        image_paths = []
+        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff'}
+        for root, dirs, files in os.walk(root_dir):
+            for file in files:
+                if os.path.splitext(file)[1].lower() in image_extensions:
+                    image_paths.append(os.path.join(root, file))
+        return image_paths
 
-    # Adjust class labels for positive dataset (map 0->1 since Original has only one class)
-    positive_samples = [(img, 1) for img, _ in positive_dataset.samples]  # relabel positive images to class 1
-    
-    # Adjust class labels for negative dataset (map any label->0)
-    negative_samples = [(img, 0) for img, _ in negative_dataset.samples]  # relabel negative images to class 0
+    # Load all image paths for positive class (1) - directly from Original directory and subdirectories
+    positive_paths = get_image_paths(positive_dir)  # get all images from positive directory
+    positive_samples = [(img_path, 1) for img_path in positive_paths]  # label as class 1
+
+    # Load all image paths for negative class (0) - from random_doc_images and its subdirectories
+    negative_paths = get_image_paths(negative_dir)  # get all images from negative directory
+    negative_samples = [(img_path, 0) for img_path in negative_paths]  # label as class 0
 
     # Combine all samples from both classes
     all_samples = positive_samples + negative_samples  # merged sample list
