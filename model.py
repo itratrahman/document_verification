@@ -43,11 +43,28 @@ from datetime import datetime  # used to format current date/time for log filena
 # Get the directory where this script is located
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))  # script directory
 
-# Define the root directory containing 'positive' and 'negative' subfolders
-DATA_DIR = os.path.join(SCRIPT_DIR, "data")  # data directory relative to script
+# Detect if running in Kaggle environment by checking for Kaggle-specific path
+IS_KAGGLE = os.path.exists("/kaggle/input")  # check if Kaggle input directory exists
 
-# Define the directory where model checkpoints will be saved
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "checkpoints")  # checkpoints directory relative to script
+# Log the detected environment
+if IS_KAGGLE:  # kaggle environment check
+    logger_temp = logging.getLogger("env_check")  # temporary logger for environment detection
+    logger_temp.info("Running in Kaggle environment")  # log kaggle detection
+else:
+    logger_temp = logging.getLogger("env_check")  # temporary logger for environment detection
+    logger_temp.info("Running in local/server environment")  # log local detection
+
+# Set DATA_DIR based on the detected environment
+if IS_KAGGLE:  # kaggle condition
+    DATA_DIR = "/kaggle/input/eu-driver-lincense/data"  # kaggle data path
+else:  # local/server condition
+    DATA_DIR = os.path.join(SCRIPT_DIR, "data")  # local data directory relative to script
+
+# Set OUTPUT_DIR based on the detected environment
+if IS_KAGGLE:  # kaggle condition
+    OUTPUT_DIR = os.path.join(SCRIPT_DIR, "checkpoints")  # save in script directory for kaggle
+else:  # local/server condition
+    OUTPUT_DIR = os.path.join(SCRIPT_DIR, "models")  # save in models folder for local/server
 
 # Define the directory where log files will be saved
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")  # logs directory relative to script
@@ -119,6 +136,20 @@ logger.info(f"Logging to file: {LOG_FILENAME}")  # message indicating log file l
 
 # Log a separator to distinguish between different runs
 logger.info("=" * 80)  # visual separator between runs
+
+# Log metadata for the current run
+run_datetime = datetime.now()  # get current date and time
+run_date_str = run_datetime.strftime("%Y-%m-%d")  # format date as YYYY-MM-DD
+run_time_str = run_datetime.strftime("%H:%M:%S")  # format time as HH:MM:SS
+
+# Create a metadata line with hashes and run information
+metadata_line = f"{'#' * 10} RUN START - Date: {run_date_str}, Time: {run_time_str} {'#' * 10}"  # metadata with hashes
+
+# Log the metadata line
+logger.info(metadata_line)  # record run metadata
+
+# Log a separator to distinguish between different runs
+logger.info("=" * 80)  # visual separator after metadata
 
 
 def set_seed(seed):
