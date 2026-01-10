@@ -1,34 +1,40 @@
 # Document Verification Project
 
-This repository contains a deep learning-based document verification system using EfficientNet-B0 for binary classification of license documents. The project automatically distinguishes between authentic license images and other document types using a trained neural network.
+A comprehensive deep learning-based document verification system using **EfficientNet-B0** for binary classification of license documents. This project automatically distinguishes between authentic license images and other document types using transfer learning with ImageNet-pretrained weights.
 
 ## Overview
 
-- **Binary Classification Model**: EfficientNet-B0 neural network trained to classify documents as licenses (positive) or other document types (negative)
-- **Balanced Dataset Training**: Uses inverse frequency class weighting to handle imbalanced training data
-- **Comprehensive Dataset**: Trains on ~3,000+ license images and diverse negative examples from multiple document categories
-- **Reproducible Training**: Deterministic splits and seed management for reproducible model training
+- **Binary Classification**: EfficientNet-B0 neural network trained to classify documents as licenses (positive class: 1) or other document types (negative class: 0)
+- **Balanced Dataset**: Inverse frequency class weighting automatically handles imbalanced training data
+- **Large-Scale Dataset**: ~3,000 license images + 866 diverse negative examples spanning 11 document categories
+- **Reproducible Training**: Deterministic random seeds, seeded dataset splits, and comprehensive logging ensure consistent results
+- **Production-Ready**: Fully instrumented training pipeline with model checkpointing, validation monitoring, and detailed logging
 
 ## Features
 
-- Automated license document detection and classification
-- Binary classification: License vs. Non-License documents
-- Class-weighted loss for handling imbalanced datasets
-- Validation/Test split with deterministic seeding
-- Comprehensive logging for training monitoring
-- Model checkpointing (best and final models)
-- Support for CPU and GPU training
+- **EfficientNet-B0 Transfer Learning**: Leverages pretrained ImageNet weights for improved generalization
+- **Automated License Detection**: Binary classification distinguishing licenses from diverse document types
+- **Class Weight Balancing**: Inverse frequency weighting automatically computed from dataset composition
+- **Deterministic Reproducibility**: Fixed seeds for Python, NumPy, PyTorch, and CUDA ensure consistent results across runs
+- **Comprehensive Logging**: Dual-output logging (file + console) with timestamps, run metadata, batch-level progress, and performance metrics
+- **Intelligent Data Loading**: Recursive directory traversal supporting multi-level folder hierarchies for flexible data organization
+- **Model Checkpointing**: Automatic best-model selection based on validation accuracy with dual checkpoint strategy (best + final)
+- **GPU/CPU Flexibility**: Automatic hardware detection with CUDA support and proper memory management (pinned memory for data loading)
+- **Data Augmentation**: Random cropping, horizontal flips, and ImageNet normalization for improved robustness
 
 ## Project Structure
 
 ```
 document_verification/
-├── model.py                    # Main training script with EfficientNet-B0 model
-├── requirements.txt            # Project dependencies
-├── README.md                   # This file
-├── data/                       # Training and validation data
-│   ├── Original/               # Positive class: ~3,000+ license images
-│   ├── random_doc_images/      # Negative class: diverse document types
+├── model.py                    # Main training script (584 lines)
+│                              # Features: EfficientNet-B0, reproducibility, logging
+├── requirements.txt            # Project dependencies (11 packages)
+├── README.md                   # Project documentation
+├── LICENSE                     # MIT License
+├── data/                       # Training and validation data (~3,866 total samples)
+│   ├── Original/               # Positive class: 3,000 license images
+│   │                          # Supported formats: PNG, JPG, JPEG, BMP, GIF, TIFF
+│   ├── random_doc_images/      # Negative class: 866 diverse documents
 │   │   ├── blank_pages/
 │   │   ├── book_front_covers/
 │   │   ├── book_pages/
@@ -40,110 +46,364 @@ document_verification/
 │   │   ├── newspapers/
 │   │   ├── passport/
 │   │   └── tax_documents/
-│   └── truth_tables/           # Ground truth JSON annotations (~3,000+ files)
-├── checkpoints/                # Model checkpoints (created during training)
-├── logs/                       # Training logs (created during training)
-└── models/                     # Additional model files and resources
+│   ├── truth_tables/           # Ground truth JSON annotations (~3,000+ metadata files)
+│   ├── README.md               # Data documentation
+│   └── Original/README.md
+├── models/                     # Model output directory (final and best checkpoints)
+│   └── README.md               # Models folder documentation
+├── checkpoints/                # Alternate checkpoint location (for Kaggle environments)
+├── logs/                       # Training logs (appending to single log file)
+│   └── train_log.txt           # Timestamped training history with run metadata
+└── .git/                       # Version control
 ```
 
 ## Data Structure
 
 ### Positive Class (License Images)
 - **Location**: `data/Original/`
-- **Count**: ~3,000+ PNG images
-- **Purpose**: Training positive examples for license recognition
+- **Count**: 3,000 PNG images
+- **Purpose**: Primary training examples for license recognition
+- **Format Support**: PNG, JPG, JPEG, BMP, GIF, TIFF (auto-detected by extension)
 
 ### Negative Class (Other Documents)
 - **Location**: `data/random_doc_images/`
-- **Categories**: Blank pages, books, invoices, letters, certificates, newspapers, passports, tax documents, driving licenses
-- **Purpose**: Training diverse negative examples to improve model robustness
+- **Total Count**: 866 diverse images
+- **Categories**: 11 document types including:
+  - Blank pages, book front covers, book pages, books
+  - Driving licenses, invoices, letters
+  - National certificates, newspapers, passports, tax documents
+- **Purpose**: Training diverse negative examples to improve model robustness and reduce false positives
 
-### Ground Truth
+### Ground Truth Metadata
 - **Location**: `data/truth_tables/`
-- **Format**: JSON metadata files corresponding to Original/ images
-- **Purpose**: Validation and evaluation of model predictions
+- **Format**: JSON files with image annotations
+- **Count**: ~3,000+ metadata files corresponding to `Original/` images
+- **Purpose**: Validation and evaluation reference data
+
+### Dataset Statistics (as of latest training)
+- **Total Samples**: 3,866
+- **Positive (Licenses)**: 3,000 (77.6%)
+- **Negative (Other Docs)**: 866 (22.4%)
+- **Train Split**: 3,093 (80%)
+- **Validation Split**: 773 (20%)
+- **Class Weight (Negative)**: 2.23 (upweighted due to underrepresentation)
+- **Class Weight (Positive)**: 0.64 (downweighted due to overrepresentation)
 
 ## Model Architecture
 
-- **Base Model**: EfficientNet-B0 (pretrained on ImageNet)
-- **Input Size**: 224×224 pixels
-- **Normalization**: ImageNet statistics (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-- **Output**: Binary classification (2 classes)
-- **Optimizer**: Adam (lr=1e-4)
-- **Loss Function**: CrossEntropyLoss with class weights
-- **Data Augmentation**: Random resize crop, horizontal flip, normalization
+### Base Architecture
+- **Model**: EfficientNet-B0 (pretrained on ImageNet)
+- **Pretrained Weights**: ImageNet-1k (automatically downloaded on first run)
+- **Input Resolution**: 224 × 224 RGB pixels
+- **Base Feature Extractor**: 1,280 output channels
+- **Classification Head**: Single Linear layer (1,280 → 2 classes)
+
+### Normalization
+- **Mean**: [0.485, 0.456, 0.406] (ImageNet statistics)
+- **Std Dev**: [0.229, 0.224, 0.225] (ImageNet statistics)
+- **Color Space**: RGB
+
+### Training Configuration
+- **Optimizer**: Adam (lr=1e-4, default β₁=0.9, β₂=0.999)
+- **Loss Function**: CrossEntropyLoss with class weight balancing
+- **Class Weights**: Computed as `total_samples / (num_classes × class_counts)`
+  - Automatically handles imbalanced class distribution
+  - Upweights underrepresented negative class
+  - Downweights overrepresented positive class
+
+### Data Augmentation (Training Only)
+- **Resize**: Shorter side to 256 pixels
+- **Random Resized Crop**: 224×224 with scale factor [0.8, 1.0]
+- **Random Horizontal Flip**: 50% probability
+- **Normalization**: Applied to all splits
+
+### Inference (Validation & Test)
+- **Resize**: Shorter side to 256 pixels
+- **Center Crop**: 224×224 from center
+- **Normalization**: ImageNet statistics applied
 
 ## Getting Started
 
-1. **Install Dependencies**  
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 1. Prerequisites
+- Python 3.8 or higher
+- pip or conda package manager
+- Optional: CUDA 11.0+ for GPU acceleration (recommended for faster training)
 
-2. **Prepare Data**  
-   - Ensure `data/Original/` contains license images
-   - Ensure `data/random_doc_images/` contains non-license documents organized by type
-   - Data structure is automatically handled by the training script
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-3. **Train the Model**  
-   ```bash
-   python model.py
-   ```
+**Dependencies**:
+- `torch` - Deep learning framework
+- `torchvision` - Computer vision utilities and pretrained models
+- `numpy` - Numerical computing
+- `Pillow` - Image loading and processing
+- `opencv-python` - Image manipulation
+- `matplotlib` - Visualization (for potential plotting)
+- `scipy` - Scientific computing utilities
+- `paddlepaddle` & `paddleocr` - OCR capabilities for document text extraction
+- `retinaface` - Face detection (optional advanced feature)
 
-4. **Monitor Training**  
-   - Check logs in `logs/train_log_*.txt`
-   - Model checkpoints saved in `checkpoints/`
-   - Best model: `checkpoints/best_efficientnet_binary.pt`
-   - Final model: `checkpoints/final_efficientnet_binary.pt`
+### 3. Prepare Data
+```bash
+# Ensure directory structure exists:
+data/
+├── Original/          # Place 3,000+ license images here
+├── random_doc_images/ # Place diverse non-license documents organized by category
+│   ├── blank_pages/
+│   ├── books/
+│   ├── invoices/
+│   └── ... (other categories)
+└── truth_tables/      # JSON metadata files (optional for evaluation)
+```
+
+### 4. Configure Training (Optional)
+Edit hyperparameters in `model.py` (lines 45-58):
+```python
+NUM_EPOCHS = 10           # Number of training passes through dataset
+BATCH_SIZE = 32           # Samples per batch (reduce for low-memory GPUs)
+LEARNING_RATE = 1e-4      # Adam optimizer step size
+VAL_SPLIT = 0.2           # Fraction of data for validation (80/20 split)
+SEED = 42                 # Random seed for reproducibility
+```
+
+### 5. Train the Model
+```bash
+python model.py
+```
+
+**What happens during training**:
+1. Data is loaded from `Original/` and `random_doc_images/` directories
+2. Dataset is split deterministically: 80% training, 20% validation
+3. Class weights are computed to balance the imbalanced dataset
+4. Model trains for 10 epochs with loss/accuracy logged each batch
+5. Best model is saved when validation accuracy improves
+6. Training log is appended to `logs/train_log.txt`
+7. Checkpoints saved to `models/` directory
+
+### 6. Monitor Training Progress
+```bash
+# View training logs in real-time:
+tail -f logs/train_log.txt
+
+# Or open the log file in your editor:
+cat logs/train_log.txt
+```
+
+**Log output includes**:
+- Run metadata (date, time, environment)
+- Device information (CPU vs GPU)
+- Dataset composition and class weights
+- Per-epoch loss and accuracy for both train/val phases
+- Batch-level progress (every 50 batches)
+- Best model checkpoint location
+- Total training duration
+
+### 7. Retrieve Trained Models
+After successful training:
+- **Best Model**: `models/best_efficientnet_binary.pt`
+  - Best validation accuracy checkpoint
+  - Recommended for inference/deployment
+- **Final Model**: `models/final_efficientnet_binary.pt`
+  - Final weights after all epochs
+  - For comparison or analysis
 
 ## Configuration
 
-Edit the following parameters in `model.py` to customize training:
+All hyperparameters are defined in `model.py` (hardcoded configuration block, lines 45-58):
 
-- `NUM_EPOCHS`: Number of training epochs (default: 10)
-- `BATCH_SIZE`: Batch size for training (default: 32)
-- `LEARNING_RATE`: Adam optimizer learning rate (default: 1e-4)
-- `VAL_SPLIT`: Validation split ratio (default: 0.2)
-- `SEED`: Random seed for reproducibility (default: 42)
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `NUM_EPOCHS` | 10 | Number of complete passes through training dataset |
+| `BATCH_SIZE` | 32 | Number of samples processed per gradient update |
+| `LEARNING_RATE` | 1e-4 | Adam optimizer step size (lower = slower but more stable learning) |
+| `VAL_SPLIT` | 0.2 | Fraction of data reserved for validation (0.2 = 80/20 split) |
+| `SEED` | 42 | Random seed for reproducible train/val splits and initialization |
+| `DATA_DIR` | `./data` | Root directory containing `Original/` and `random_doc_images/` |
+| `OUTPUT_DIR` | `./models` | Directory for saving checkpoints (Kaggle: `./checkpoints`) |
+| `LOG_DIR` | `./logs` | Directory for training logs |
 
-## Training Process
+### Environment Detection
+The script automatically detects the execution environment:
+- **Kaggle**: Sets `DATA_DIR=/kaggle/input/eu-driver-lincense/data` and `OUTPUT_DIR=./checkpoints`
+- **Local/Server**: Uses relative paths (`./data`, `./models`, `./logs`)
 
-1. **Data Loading**: CustomDataset loads images from Original/ and random_doc_images/
-2. **Label Assignment**: Original → class 1, random_doc_images → class 0
-3. **Preprocessing**: Resize to 224×224, apply augmentation, normalize
-4. **Train/Val Split**: 80% training, 20% validation (deterministic)
-5. **Class Weighting**: Inverse frequency weights computed to balance classes
-6. **Training Loop**: 
-   - Forward pass through EfficientNet-B0
-   - Weighted cross-entropy loss
-   - Backpropagation and gradient updates
-   - Validation on hold-out set each epoch
-7. **Model Checkpointing**: Best model saved when validation accuracy improves
-8. **Final Output**: Best and final models saved to checkpoints/
+### Advanced Configuration
+For fine-tuning:
+- Reduce `BATCH_SIZE` if running out of GPU memory
+- Increase `LEARNING_RATE` slightly for faster convergence (use cautiously)
+- Adjust `NUM_EPOCHS` based on convergence patterns observed in logs
+- Modify `VAL_SPLIT` for different train/val proportions (default 80/20 recommended)
+
+## Training Pipeline Details
+
+### Data Processing
+1. **Image Discovery**: Recursive directory traversal finds all images in `Original/` and `random_doc_images/`
+2. **Format Support**: Automatically detects PNG, JPG, JPEG, BMP, GIF, TIFF files
+3. **Label Assignment**: 
+   - Positive class (1): Images from `Original/`
+   - Negative class (0): Images from `random_doc_images/` and subdirectories
+4. **Custom Dataset**: `CustomDataset` class handles efficient loading and caching
+
+### Preprocessing Pipeline
+**Training**:
+1. Resize shorter side to 256 pixels
+2. Random resized crop to 224×224 with scale [0.8, 1.0]
+3. Random horizontal flip (50% probability)
+4. Convert to tensor
+5. Normalize with ImageNet statistics
+
+**Validation**:
+1. Resize to 256 pixels (shorter side)
+2. Center crop to 224×224
+3. Convert to tensor
+4. Normalize with ImageNet statistics
+
+### Training Loop
+```
+For each epoch:
+  For each phase (train/val):
+    For each batch:
+      1. Forward pass through EfficientNet-B0
+      2. Compute weighted cross-entropy loss
+      3. [Train only] Backward pass and optimizer step
+      4. Track loss and accuracy
+    Log epoch loss/accuracy
+    [Val only] Check if validation accuracy improved
+    [Val only] Save checkpoint if new best model found
+```
+
+### Class Weight Computation
+```
+weight[class] = total_samples / (num_classes × count[class])
+```
+
+Example from dataset (3,866 total):
+- Negative (866 samples): weight = 3866 / (2 × 866) = 2.23
+- Positive (3000 samples): weight = 3866 / (2 × 3000) = 0.64
+
+This upweights the underrepresented negative class and downweights the overrepresented positive class.
+
+### Reproducibility Features
+1. **Seeding**: Set seeds for Python `random`, NumPy, PyTorch CPU, and all CUDA devices
+2. **Deterministic Split**: Uses `torch.Generator` with fixed seed for train/val split
+3. **Logged Metadata**: Run start time, seed value, device information all logged
+4. **Validation**: Same seed (42) guarantees identical train/val splits across runs
+
+## Code Architecture
+
+### Main Components
+- **`set_seed(seed)`**: Initializes all random number generators for reproducibility
+- **`CustomDataset`**: PyTorch Dataset subclass for image loading and transformation
+- **`create_dataloaders()`**: Loads data, computes class weights, creates DataLoaders (584 lines total)
+- **`create_model()`**: Instantiates EfficientNet-B0 and replaces classification head
+- **`train_model()`**: Main training loop with validation, checkpointing, and logging
+- **`main()`**: Orchestrates the complete pipeline
+
+### Logging System
+- **Dual output**: Logs written to both file (`logs/train_log.txt`) and console simultaneously
+- **Persistent**: All runs append to the same log file with run separators
+- **Timestamped**: Each log entry includes human-readable timestamp (YYYY-MM-DD HH:MM:SS)
+- **Batch-level**: Progress logged every 50 batches during training
+- **Comprehensive**: Logs include metrics, file paths, device info, and metadata
 
 ## Requirements
 
-- Python 3.8+
-- PyTorch 1.9+
-- torchvision
-- Pillow (PIL)
-- NumPy
-- See `requirements.txt` for complete list
+- **Python**: 3.8+
+- **PyTorch**: 1.9+ (with torchvision)
+- **Key Libraries**:
+  - `torch` - Deep learning
+  - `torchvision` - Vision models and transforms
+  - `numpy` - Numerical operations
+  - `Pillow` - Image I/O
+  - `opencv-python` - Image processing
+  - `paddlepaddle` & `paddleocr` - OCR utilities
+  - `scipy` - Scientific functions
+  - `matplotlib` - Visualization
 
-## Best Practices
+See `requirements.txt` for exact versions.
 
-- Ensure all image files in data directories are valid PNG/JPG/JPEG formats
-- Check logs in `logs/` for training progress and debugging
-- Use consistent image quality for best results
-- Keep seed value constant for reproducible results
-- Monitor GPU memory usage when increasing batch size
+## Best Practices & Troubleshooting
+
+### Data Preparation
+- ✓ Ensure all images in `data/Original/` are valid license documents (positive examples)
+- ✓ Place diverse non-license documents in `data/random_doc_images/` and subfolders (negative examples)
+- ✓ Verify image files have supported extensions (.png, .jpg, .jpeg, .bmp, .gif, .tiff)
+- ✓ Remove corrupted or unreadable images to avoid DataLoader errors
+
+### Training Optimization
+- ✓ Check `logs/train_log.txt` regularly to monitor loss/accuracy curves
+- ✓ If memory errors occur, reduce `BATCH_SIZE` in `model.py`
+- ✓ If training is slow on CPU, consider using GPU (install CUDA-enabled PyTorch)
+- ✓ For faster experimentation, reduce `NUM_EPOCHS` and test with subset of data
+
+### Reproducibility
+- ✓ Always use the same `SEED` value (default: 42) for consistent splits
+- ✓ Keep hardware consistent (CPU vs GPU) as they may produce slightly different floating-point results
+- ✓ Archive `requirements.txt` versions if exact reproducibility is critical
+
+### Troubleshooting Common Issues
+
+**Issue**: `FileNotFoundError: data/Original/ not found`
+- **Solution**: Ensure data directory structure matches project structure; place license images in `data/Original/`
+
+**Issue**: Out of memory (OOM) error
+- **Solution**: Reduce `BATCH_SIZE` from 32 to 16 or 8 in `model.py`
+
+**Issue**: Validation accuracy not improving
+- **Solution**: Check class imbalance in dataset; verify negative examples are sufficiently diverse; increase `NUM_EPOCHS`
+
+**Issue**: Training is very slow
+- **Solution**: Check device in logs; enable GPU support by installing CUDA-enabled PyTorch; verify `num_workers=4` in DataLoaders
+
+## Model Performance
+
+After training completes, expected behavior:
+- **Training Loss**: Decreases as model learns
+- **Validation Loss**: Should decrease, plateau, or slightly increase (overfitting indicator)
+- **Training Accuracy**: Increases toward 95%+
+- **Validation Accuracy**: Typically 85-95% depending on data quality and class balance
+
+Best model is saved when validation accuracy is highest.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License** - see [LICENSE](LICENSE) file for details.
 
-The MIT License is a permissive open-source license that allows you to freely use, modify, and distribute this software in personal and commercial projects, provided you include the original license and copyright notice.
+The MIT License is a permissive open-source license allowing you to:
+- ✓ Use, modify, and distribute this software freely
+- ✓ Use in personal and commercial projects
+- ✓ Include in proprietary software
+
+Required: Include the original license and copyright notice in distributions.
 
 ---
 
-*This project uses deep learning to automate license document verification and classification.*
+## Contributing
+
+Contributions are welcome! Areas for enhancement:
+- Multi-class classification (beyond binary license/non-license)
+- Fine-grained license type detection
+- OCR integration for document text extraction
+- Web/API deployment
+- Real-time inference optimization
+
+## Citation
+
+If you use this project, please cite:
+```bibtex
+@misc{document_verification_2026,
+  title={Document Verification: Deep Learning-Based License Classification},
+  author={Your Name},
+  year={2026},
+  howpublished={\url{https://github.com/yourusername/document_verification}}
+}
+```
+
+---
+
+**Last Updated**: January 2026  
+**Status**: Production-ready  
+**Model**: EfficientNet-B0 Binary Classifier  
+**Dataset**: 3,866 documents (3,000 licenses + 866 diverse alternatives)
