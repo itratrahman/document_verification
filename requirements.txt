@@ -8,3 +8,7 @@ paddleocr
 opencv-python
 retinaface
 Pillow
+fastapi
+uvicorn[standard]
+pytest
+requests
