@@ -20,15 +20,33 @@ This project implements a **three-stage verification pipeline** combining deep l
 
 ## 2. Features
 
-- **EfficientNet-B0 Transfer Learning**: Leverages pretrained ImageNet weights for improved generalization
-- **Automated License Detection**: Binary classification distinguishing licenses from diverse document types
-- **Class Weight Balancing**: Inverse frequency weighting automatically computed from dataset composition
-- **Deterministic Reproducibility**: Fixed seeds for Python, NumPy, PyTorch, and CUDA ensure consistent results across runs
-- **Comprehensive Logging**: Dual-output logging (file + console) with timestamps, run metadata, batch-level progress, and performance metrics
-- **Intelligent Data Loading**: Recursive directory traversal supporting multi-level folder hierarchies for flexible data organization
-- **Model Checkpointing**: Automatic best-model selection based on validation accuracy with dual checkpoint strategy (best + final)
-- **GPU/CPU Flexibility**: Automatic hardware detection with CUDA support and proper memory management (pinned memory for data loading)
-- **Data Augmentation**: Random cropping, horizontal flips, and ImageNet normalization for improved robustness
+### 2.1 Training Pipeline
+- **EfficientNet-B0 Transfer Learning**: Leverages pretrained ImageNet-1k weights with custom binary classification head (1,280 → 2 classes)
+- **MLflow Experiment Tracking**: Comprehensive experiment logging with automatic tracking of hyperparameters, metrics, dataset statistics, and model artifacts
+- **Class Weight Balancing**: Inverse frequency weighting (`total_samples / (num_classes × class_counts)`) automatically handles imbalanced datasets
+- **Deterministic Reproducibility**: Fixed seeds for Python `random`, NumPy, PyTorch CPU/CUDA, and seeded dataset splits guarantee identical results across runs
+- **Smart Data Loading**: Recursive directory traversal with multi-format support (PNG, JPG, JPEG, BMP, GIF, TIFF) and efficient DataLoader with pinned memory
+- **Dual Checkpointing Strategy**: Saves both best validation accuracy checkpoint and final epoch weights with automatic model selection
+- **Advanced Data Augmentation**: Random resized crop (scale 0.8-1.0), horizontal flips, and ImageNet normalization for training robustness
+- **Environment Auto-Detection**: Automatically detects Kaggle vs local/server environments and configures data/output paths accordingly
+- **Comprehensive Logging System**: Dual-output (file + console) with timestamps, run metadata, batch-level metrics (every 50 batches), and epoch summaries
+
+### 2.2 Inference & API
+- **Three-Stage Verification Pipeline**: Sequential validation through deep learning classification, OCR marker detection, and facial recognition
+- **Production-Ready FastAPI Server**: RESTful API with automatic Swagger UI documentation, Pydantic validation, and structured JSON responses
+- **Thread-Safe Inference**: CPU/GPU-bound operations (model inference, OCR, face detection) executed in threadpool to maintain async event loop responsiveness
+- **Multi-Model Orchestration**: Coordinates EfficientNet-B0, PaddleOCR, and RetinaFace models with graceful degradation when optional dependencies are unavailable
+- **Secure Image Handling**: Base64 decoding with data URI support, size limit enforcement (8MB default), and input validation to prevent memory exhaustion
+- **Lazy Model Loading**: Models loaded once at server startup with efficient state management via `app.state` for zero-latency subsequent requests
+- **Configurable Thresholds**: Adjustable confidence thresholds for binary classification and face size constraints for flexible deployment scenarios
+- **Real-Time Performance**: Optimized preprocessing pipeline with GPU acceleration and batch processing capabilities
+
+### 2.3 Deployment & Testing
+- **Docker Containerization**: Multi-stage Dockerfile with health checks, non-root user, and docker-compose orchestration
+- **Pytest Integration Tests**: Comprehensive test suite for `/verify` endpoint with configurable sampling and server URL
+- **GPU/CPU Flexibility**: Automatic device detection with CUDA support and proper memory management for both training and inference
+- **Volume Mount Support**: Persistent storage for models, logs, and data with read-only/read-write configurations
+- **Environment Variable Configuration**: Flexible configuration via environment variables for log levels, paths, and runtime parameters
 
 ## 3. Project Structure
 
