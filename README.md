@@ -1,6 +1,6 @@
 # Document Verification Project
 
-A comprehensive AI-based, OCR-based, and facial verification-based document verification system using **EfficientNet-B0**, **PaddleOCR**, and **RetinaFace** for verification of EU Driving License. This project automatically distinguishes between authentic license images and other document types.
+A comprehensive AI-based, OCR-based, and facial verification-based document verification system using **EfficientNet-B0**, **PaddleOCR**, and **RetinaFace** for verification of EU Driving License. This application automatically distinguishes between authentic license images and other document types.
 
 ## Overview
 
