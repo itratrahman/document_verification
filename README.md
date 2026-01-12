@@ -225,6 +225,85 @@ The project includes a production-ready FastAPI inference server (`app.py`) that
 2. **OCR Verification**: Extracts text and validates presence of required EU license markers
 3. **Face Detection**: Ensures a single face is present with reasonable size and position
 
+### Verification Pipeline Flowchart
+
+```mermaid
+flowchart TD
+    Start([POST /verify endpoint]) --> Decode[Decode Base64 Image]
+    Decode --> Stage1{Stage 1:<br/>Deep Learning Inference}
+    
+    Stage1 --> |Input Image| Preprocess1[Preprocess Image<br/>- Resize to 256px<br/>- Center crop 224x224<br/>- Normalize ImageNet stats]
+    Preprocess1 --> EfficientNet[EfficientNet-B0<br/>Binary Classifier]
+    EfficientNet --> Softmax[Softmax Probabilities]
+    Softmax --> Threshold{Probability[1] >= thresh?<br/>Default: 0.5}
+    Threshold --> |Yes| Pass1[✓ Binary Check Passed<br/>predicted_label: 1<br/>probabilities: [0.15, 0.85]]
+    Threshold --> |No| Fail1[✗ Binary Check Failed<br/>predicted_label: 0<br/>probabilities: [0.92, 0.08]]
+    
+    Pass1 --> Stage2
+    Fail1 --> Stage2
+    
+    Stage2{Stage 2:<br/>OCR Marker Check} --> |Input Image| Convert[Convert RGB to BGR<br/>NumPy Array]
+    Convert --> PaddleOCR[PaddleOCR Engine<br/>Extract Text]
+    PaddleOCR --> Normalize[Normalize Text<br/>- Lowercase<br/>- Strip whitespace]
+    Normalize --> SearchMarkers[Search for EU License Markers<br/>1, 2, 3, 4a, 4b, 4c, 4d, 5, 7, 8, 9]
+    SearchMarkers --> MarkerCheck{All markers found?}
+    MarkerCheck --> |Yes| Pass2[✓ OCR Check Passed<br/>is_valid_format: true<br/>missing_markers: []]
+    MarkerCheck --> |No| Fail2[✗ OCR Check Failed<br/>is_valid_format: false<br/>missing_markers: [4a, 9]]
+    
+    Pass2 --> Stage3
+    Fail2 --> Stage3
+    
+    Stage3{Stage 3:<br/>Facial Detection} --> |Input Image| ConvertFace[Convert RGB to BGR<br/>NumPy Array]
+    ConvertFace --> RetinaFace[RetinaFace Detector<br/>Detect Faces]
+    RetinaFace --> CountFaces{Number of Faces}
+    CountFaces --> |0 faces| NoFace[✗ Face Check Failed<br/>reason: no_faces<br/>ok: false]
+    CountFaces --> |2+ faces| MultiFace[✗ Face Check Failed<br/>reason: multiple_faces<br/>ok: false]
+    CountFaces --> |1 face| SizeCheck{Face Size Check}
+    SizeCheck --> |Too small<br/>rel_area < 0.02| SmallFace[✗ Face Check Failed<br/>reason: face_too_small<br/>ok: false]
+    SizeCheck --> |Too large<br/>rel_area > 0.6| LargeFace[✗ Face Check Failed<br/>reason: face_too_large<br/>ok: false]
+    SizeCheck --> |0.02 ≤ rel_area ≤ 0.6| Pass3[✓ Face Check Passed<br/>reason: single_face_ok<br/>ok: true]
+    
+    Pass1 --> Combine
+    Fail1 --> Combine
+    Pass2 --> Combine
+    Fail2 --> Combine
+    Pass3 --> Combine
+    NoFace --> Combine
+    MultiFace --> Combine
+    SmallFace --> Combine
+    LargeFace --> Combine
+    
+    Combine[Combine Results] --> FinalDecision{Final Decision:<br/>All checks passed?}
+    FinalDecision --> |binary.passed = true AND<br/>ocr.is_valid_format = true AND<br/>face.ok = true| Success([✓ Document Verified<br/>ok: true])
+    FinalDecision --> |Any check failed| Failure([✗ Verification Failed<br/>ok: false])
+    
+    Success --> Return[Return JSON Response]
+    Failure --> Return
+    
+    style Stage1 fill:#e1f5ff
+    style Stage2 fill:#fff4e1
+    style Stage3 fill:#ffe1f5
+    style Success fill:#d4edda
+    style Failure fill:#f8d7da
+    style EfficientNet fill:#0066cc,color:#fff
+    style PaddleOCR fill:#ff9900,color:#fff
+    style RetinaFace fill:#cc0066,color:#fff
+```
+
+**Key Components:**
+
+| Component | Technology | Purpose | Output |
+|-----------|-----------|---------|--------|
+| **Deep Learning Inference** | EfficientNet-B0 | Binary classification (license vs. non-license) | `predicted_label`, `probabilities[2]`, `passed` |
+| **OCR Marker Check** | PaddleOCR | Extract text and verify EU license markers (1-9, 4a-4d) | `found_markers`, `missing_markers`, `is_valid_format` |
+| **Facial Detection** | RetinaFace | Detect and validate single face with proper size | `num_faces`, `faces[]`, `ok`, `reason` |
+
+**Decision Logic:**
+- **Overall Pass**: `ok = binary.passed AND ocr.is_valid_format AND face.ok`
+- **Threshold**: Configurable via `thresh_binary` (default: 0.5)
+- **Face Size**: Relative area must be between 2% and 60% of image
+- **Markers**: All 11 required markers must be found for OCR pass
+
 ### Running the Server
 
 1. **Start the inference server**:
