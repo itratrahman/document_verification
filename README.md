@@ -4,11 +4,19 @@ A comprehensive AI-based, OCR-based, and facial verification-based document veri
 
 ## 1. Overview
 
-- **Binary Classification**: EfficientNet-B0 neural network trained to classify documents as licenses (positive class: 1) or other document types (negative class: 0)
-- **Balanced Dataset**: Inverse frequency class weighting automatically handles imbalanced training data
-- **Large-Scale Dataset**: ~3,000 license images + 866 diverse negative examples spanning 11 document categories
+This project implements a **three-stage verification pipeline** combining deep learning, OCR, and facial recognition to authenticate EU Driving Licenses with high accuracy:
+
+- **Stage 1 - Deep Learning Classification**: EfficientNet-B0 neural network trained to classify documents as licenses (positive class: 1) or other document types (negative class: 0). Trained on 3,866 images with class-balanced loss function achieving 85-95% validation accuracy.
+
+- **Stage 2 - OCR-Based Marker Verification**: PaddleOCR extracts text from document images and validates the presence of all required EU license markers (1, 2, 3, 4a, 4b, 4c, 4d, 5, 7, 8, 9). Uses regex pattern matching with normalization to ensure format compliance.
+
+- **Stage 3 - Facial Recognition Verification**: RetinaFace detects faces in the document and validates that exactly one face is present with appropriate size constraints (relative area between 2-60% of image). Prevents false positives from documents without photos or multiple faces.
+
+**Key Characteristics**:
+- **Multi-Modal Verification**: Combines three independent AI technologies for robust authentication
+- **Balanced Dataset**: Inverse frequency class weighting handles imbalanced training data (~3,000 licenses + 866 diverse negative examples)
 - **Reproducible Training**: Deterministic random seeds, seeded dataset splits, and comprehensive logging ensure consistent results
-- **Production-Ready**: Fully instrumented training pipeline with model checkpointing, validation monitoring, and detailed logging
+- **Production-Ready**: FastAPI REST API with thread-safe inference, health checks, Docker deployment, and pytest integration tests
 
 ## 2. Features
 
