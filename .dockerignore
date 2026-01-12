@@ -1,0 +1,60 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+.env
+.venv
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+data/  # Exclude large training data; mount as volume or copy separately
+logs/
+checkpoints/
+models/*.pt  # Exclude large model files; mount as volume if needed
+
+# Documentation
+README.md
+LICENSE
+*.md
+
+# Tests
+tests/
+pytest.ini
+
+# Notebooks
+*.ipynb

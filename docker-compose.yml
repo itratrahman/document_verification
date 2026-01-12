@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # FastAPI inference server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: document-verification-api
+    ports:
+      - "8000:8000"  # Expose API on localhost:8000
+    environment:
+      # Optional: Set log level for uvicorn
+      - LOG_LEVEL=info
+    volumes:
+      # Mount model checkpoints (so container can load trained weights)
+      - ./models:/app/models:ro  # read-only
+      # Mount logs for persistence
+      - ./logs:/app/logs
+      # Optional: Mount data directory for inference if images stored locally
+      - ./data:/app/data:ro  # read-only
+    restart: unless-stopped
+    # Health check is defined in Dockerfile
+
+  # Optional: Jupyter notebook service for development/demos
+  notebooks:
+    image: jupyter/scipy-notebook:latest
+    container_name: document-verification-notebooks
+    ports:
+      - "8888:8888"  # Jupyter on localhost:8888
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    volumes:
+      - .:/home/jovyan/work
+    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+    depends_on:
+      - api
