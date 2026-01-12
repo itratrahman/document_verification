@@ -1,6 +1,6 @@
 # Document Verification Project
 
-A comprehensive deep learning-based document verification system using **EfficientNet-B0** for binary classification of license documents. This project automatically distinguishes between authentic license images and other document types using transfer learning with ImageNet-pretrained weights.
+A comprehensive AI-based and OCR-based document verification system using **EfficientNet-B0** for binary classification of EU Driving License documents. This project automatically distinguishes between authentic license images and other document types using transfer learning with ImageNet-pretrained weights.
 
 ## Overview
 
