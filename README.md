@@ -344,6 +344,114 @@ SAMPLE_N=5 TEST_SERVER_URL=http://127.0.0.1:8000 pytest tests/test_api.py -v
 - **`SAMPLE_N`** (env var): Number of images to sample per class (default: 3)
 - **`TEST_SERVER_URL`** (env var): Server endpoint (default: http://127.0.0.1:8000)
 
+## Docker Deployment
+
+### Overview
+The project includes a complete Docker setup for containerized deployment:
+- **`Dockerfile`**: Multi-stage image based on Python 3.11-slim with system dependencies, non-root user, and health checks
+- **`docker-compose.yml`**: Orchestration file for local development with API and Jupyter services
+- **`.dockerignore`**: Build context optimization excluding large data/model files
+
+### Quick Start with Docker Compose
+
+1. **Build and start services**:
+```bash
+docker-compose up --build
+```
+
+2. **Access the API**:
+- Swagger UI: http://localhost:8000/docs
+- API endpoint: http://localhost:8000/verify
+- Jupyter (optional): http://localhost:8888
+
+3. **Run tests against containerized server**:
+```bash
+SAMPLE_N=5 TEST_SERVER_URL=http://127.0.0.1:8000 pytest tests/test_api.py -v
+```
+
+4. **Stop services**:
+```bash
+docker-compose down
+```
+
+### Docker Run (Without Compose)
+
+```bash
+# Build the image
+docker build -t document-verification-api:latest .
+
+# Run the container
+docker run -d \
+  --name document-verification-api \
+  -p 8000:8000 \
+  -v $(pwd)/models:/app/models:ro \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/data:/app/data:ro \
+  document-verification-api:latest
+
+# Verify it's running
+curl http://localhost:8000/docs
+
+# Stop the container
+docker stop document-verification-api
+docker rm document-verification-api
+```
+
+### Volume Mounts
+
+The Docker setup uses the following volume mounts:
+
+| Host Path | Container Path | Mode | Purpose |
+|-----------|-----------------|------|---------|
+| `./models` | `/app/models` | ro | Pre-trained model weights |
+| `./logs` | `/app/logs` | rw | Training/inference logs for persistence |
+| `./data` | `/app/data` | ro | Input images for batch inference |
+
+### Configuration via Environment Variables
+
+```bash
+# Start with custom log level
+docker-compose up -e LOG_LEVEL=debug
+
+# Or with docker run
+docker run -e LOG_LEVEL=debug -p 8000:8000 document-verification-api:latest
+```
+
+### Health Checks
+
+The Dockerfile includes a health check that validates the API every 30 seconds:
+```
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3
+```
+
+Monitor container health:
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+```
+
+### Logging
+
+View container logs in real-time:
+```bash
+# With docker-compose
+docker-compose logs -f api
+
+# With docker run
+docker logs -f document-verification-api
+```
+
+### Production Considerations
+
+For production deployment:
+1. **Use a reverse proxy** (Nginx, Traefik) to handle SSL/TLS and load balancing
+2. **Set environment variables** for configuration (log level, model path, port)
+3. **Pin exact image versions** in Dockerfile (e.g., `python:3.11.0-slim` instead of `python:3.11-slim`)
+4. **Use secrets management** for sensitive data (API keys, database credentials)
+5. **Enable resource limits** in docker-compose (CPU, memory)
+6. **Implement monitoring** (Prometheus, Grafana) and logging (ELK, Splunk)
+
+See [DOCKER.md](DOCKER.md) for comprehensive Docker deployment guide including GPU support, Kubernetes, and advanced configurations.
+
 ## Configuration
 
 All hyperparameters are defined in `model.py` (hardcoded configuration block, lines 45-58):
