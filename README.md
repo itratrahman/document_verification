@@ -2,7 +2,7 @@
 
 A comprehensive AI-based, OCR-based, and facial verification-based document verification system using **EfficientNet-B0**, **PaddleOCR**, and **RetinaFace** for verification of EU Driving License. This application automatically distinguishes between authentic license images and other document types.
 
-## Overview
+## 1. Overview
 
 - **Binary Classification**: EfficientNet-B0 neural network trained to classify documents as licenses (positive class: 1) or other document types (negative class: 0)
 - **Balanced Dataset**: Inverse frequency class weighting automatically handles imbalanced training data
@@ -10,7 +10,7 @@ A comprehensive AI-based, OCR-based, and facial verification-based document veri
 - **Reproducible Training**: Deterministic random seeds, seeded dataset splits, and comprehensive logging ensure consistent results
 - **Production-Ready**: Fully instrumented training pipeline with model checkpointing, validation monitoring, and detailed logging
 
-## Features
+## 2. Features
 
 - **EfficientNet-B0 Transfer Learning**: Leverages pretrained ImageNet weights for improved generalization
 - **Automated License Detection**: Binary classification distinguishing licenses from diverse document types
@@ -22,7 +22,7 @@ A comprehensive AI-based, OCR-based, and facial verification-based document veri
 - **GPU/CPU Flexibility**: Automatic hardware detection with CUDA support and proper memory management (pinned memory for data loading)
 - **Data Augmentation**: Random cropping, horizontal flips, and ImageNet normalization for improved robustness
 
-## Project Structure
+## 3. Project Structure
 
 ```
 document_verification/
@@ -64,15 +64,15 @@ document_verification/
 └── .git/                       # Version control
 ```
 
-## Data Structure
+## 4. Data Structure
 
-### Positive Class (License Images)
+### 4.1 Positive Class (License Images)
 - **Location**: `data/Original/`
 - **Count**: 3,000 PNG images
 - **Purpose**: Primary training examples for license recognition
 - **Format Support**: PNG, JPG, JPEG, BMP, GIF, TIFF (auto-detected by extension)
 
-### Negative Class (Other Documents)
+### 4.2 Negative Class (Other Documents)
 - **Location**: `data/random_doc_images/`
 - **Total Count**: 866 diverse images
 - **Categories**: 11 document types including:
@@ -81,13 +81,13 @@ document_verification/
   - National certificates, newspapers, passports, tax documents
 - **Purpose**: Training diverse negative examples to improve model robustness and reduce false positives
 
-### Ground Truth Metadata
+### 4.3 Ground Truth Metadata
 - **Location**: `data/truth_tables/`
 - **Format**: JSON files with image annotations
 - **Count**: ~3,000+ metadata files corresponding to `Original/` images
 - **Purpose**: Validation and evaluation reference data
 
-### Dataset Statistics (as of latest training)
+### 4.4 Dataset Statistics (as of latest training)
 - **Total Samples**: 3,866
 - **Positive (Licenses)**: 3,000 (77.6%)
 - **Negative (Other Docs)**: 866 (22.4%)
@@ -96,21 +96,21 @@ document_verification/
 - **Class Weight (Negative)**: 2.23 (upweighted due to underrepresentation)
 - **Class Weight (Positive)**: 0.64 (downweighted due to overrepresentation)
 
-## Model Architecture
+## 5. Model Architecture
 
-### Base Architecture
+### 5.1 Base Architecture
 - **Model**: EfficientNet-B0 (pretrained on ImageNet)
 - **Pretrained Weights**: ImageNet-1k (automatically downloaded on first run)
 - **Input Resolution**: 224 × 224 RGB pixels
 - **Base Feature Extractor**: 1,280 output channels
 - **Classification Head**: Single Linear layer (1,280 → 2 classes)
 
-### Normalization
+### 5.2 Normalization
 - **Mean**: [0.485, 0.456, 0.406] (ImageNet statistics)
 - **Std Dev**: [0.229, 0.224, 0.225] (ImageNet statistics)
 - **Color Space**: RGB
 
-### Training Configuration
+### 5.3 Training Configuration
 - **Optimizer**: Adam (lr=1e-4, default β₁=0.9, β₂=0.999)
 - **Loss Function**: CrossEntropyLoss with class weight balancing
 - **Class Weights**: Computed as `total_samples / (num_classes × class_counts)`
@@ -118,25 +118,25 @@ document_verification/
   - Upweights underrepresented negative class
   - Downweights overrepresented positive class
 
-### Data Augmentation (Training Only)
+### 5.4 Data Augmentation (Training Only)
 - **Resize**: Shorter side to 256 pixels
 - **Random Resized Crop**: 224×224 with scale factor [0.8, 1.0]
 - **Random Horizontal Flip**: 50% probability
 - **Normalization**: Applied to all splits
 
-### Inference (Validation & Test)
+### 5.5 Inference (Validation & Test)
 - **Resize**: Shorter side to 256 pixels
 - **Center Crop**: 224×224 from center
 - **Normalization**: ImageNet statistics applied
 
-## Getting Started
+## 6. Getting Started
 
-### 1. Prerequisites
+### 6.1 Prerequisites
 - Python 3.8 or higher
 - pip or conda package manager
 - Optional: CUDA 11.0+ for GPU acceleration (recommended for faster training)
 
-### 2. Install Dependencies
+### 6.2 Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
@@ -152,7 +152,7 @@ pip install -r requirements.txt
 - `paddlepaddle` & `paddleocr` - OCR capabilities for document text extraction
 - `retinaface` - Face detection (optional advanced feature)
 
-### 3. Prepare Data
+### 6.3 Prepare Data
 ```bash
 # Ensure directory structure exists:
 data/
@@ -165,7 +165,7 @@ data/
 └── truth_tables/      # JSON metadata files (optional for evaluation)
 ```
 
-### 4. Configure Training (Optional)
+### 6.4 Configure Training (Optional)
 Edit hyperparameters in `model.py` (lines 45-58):
 ```python
 NUM_EPOCHS = 10           # Number of training passes through dataset
@@ -175,7 +175,7 @@ VAL_SPLIT = 0.2           # Fraction of data for validation (80/20 split)
 SEED = 42                 # Random seed for reproducibility
 ```
 
-### 5. Train the Model
+### 6.5 Train the Model
 ```bash
 python model.py
 ```
@@ -189,7 +189,7 @@ python model.py
 6. Training log is appended to `logs/train_log.txt`
 7. Checkpoints saved to `models/` directory
 
-### 6. Monitor Training Progress
+### 6.6 Monitor Training Progress
 ```bash
 # View training logs in real-time:
 tail -f logs/train_log.txt
@@ -207,7 +207,7 @@ cat logs/train_log.txt
 - Best model checkpoint location
 - Total training duration
 
-### 7. Retrieve Trained Models
+### 6.7 Retrieve Trained Models
 After successful training:
 - **Best Model**: `models/best_efficientnet_binary.pt`
   - Best validation accuracy checkpoint
@@ -216,16 +216,16 @@ After successful training:
   - Final weights after all epochs
   - For comparison or analysis
 
-## FastAPI Inference Server
+## 7. FastAPI Inference Server
 
-### Overview
+### 7.1 Overview
 The project includes a production-ready FastAPI inference server (`app.py`) that exposes a `/verify` endpoint for real-time document verification. The server implements a **three-stage verification pipeline**:
 
 1. **Binary Classifier**: Determines if the image is a license document
 2. **OCR Verification**: Extracts text and validates presence of required EU license markers
 3. **Face Detection**: Ensures a single face is present with reasonable size and position
 
-### Verification Pipeline Flowchart
+### 7.2 Verification Pipeline Flowchart
 
 ```mermaid
 flowchart TD
@@ -304,7 +304,7 @@ flowchart TD
 - **Face Size**: Relative area must be between 2% and 60% of image
 - **Markers**: All 11 required markers must be found for OCR pass
 
-### Running the Server
+### 7.3 Running the Server
 
 1. **Start the inference server**:
 ```bash
@@ -327,7 +327,7 @@ response = requests.post(
 print(response.json())
 ```
 
-### API Response Example
+### 7.4 API Response Example
 
 ```json
 {
@@ -354,23 +354,23 @@ print(response.json())
 }
 ```
 
-### Configuration
+### 7.5 Configuration
 - **`image_base64`** (required): Base64-encoded image or data URI
 - **`thresh_binary`** (optional): Confidence threshold for license class (default: 0.5)
 
-### Startup Model Loading
+### 7.6 Startup Model Loading
 The server loads all models on startup (`load_models` function):
 - EfficientNet-B0 classifier from `models/best_efficientnet_binary.pt` or `models/final_efficientnet_binary.pt`
 - PaddleOCR engine (if installed)
 - RetinaFace detector (if installed)
 - Common torchvision transforms for preprocessing
 
-### Thread-Safe Inference
+### 7.7 Thread-Safe Inference
 All blocking operations (model inference, OCR, face detection) are executed in a thread pool to avoid blocking FastAPI's async event loop.
 
-## Demo Notebooks
+## 8. Demo Notebooks
 
-### OCR-Based Verification (`demo_ocr.ipynb`)
+### 8.1 OCR-Based Verification (`demo_ocr.ipynb`)
 A Jupyter notebook that demonstrates OCR-based verification of EU driving licenses using PaddleOCR:
 - Loads images from `data/Original/` and `data/random_doc_images/`
 - Extracts text using PaddleOCR
@@ -382,7 +382,7 @@ A Jupyter notebook that demonstrates OCR-based verification of EU driving licens
 jupyter notebook demo_ocr.ipynb
 ```
 
-### Face Detection-Based Verification (`demo_face_detection.ipynb`)
+### 8.2 Face Detection-Based Verification (`demo_face_detection.ipynb`)
 A Jupyter notebook that demonstrates face detection and verification using RetinaFace:
 - Detects faces in images using RetinaFace
 - Validates that exactly one face is present
@@ -394,16 +394,16 @@ A Jupyter notebook that demonstrates face detection and verification using Retin
 jupyter notebook demo_face_detection.ipynb
 ```
 
-## Integration Testing
+## 9. Integration Testing
 
-### Test Suite (`tests/test_api.py`)
+### 9.1 Test Suite (`tests/test_api.py`)
 The project includes pytest-based integration tests that exercise the `/verify` endpoint:
 - Samples `n` positive images from `data/Original/`
 - Samples `n` negative images from `data/random_doc_images/`
 - Posts each image to the running server
 - Asserts response structure and HTTP status codes
 
-### Running Tests
+### 9.2 Running Tests
 
 1. **Start the server** in one terminal:
 ```bash
@@ -419,19 +419,19 @@ pytest tests/test_api.py -v
 SAMPLE_N=5 TEST_SERVER_URL=http://127.0.0.1:8000 pytest tests/test_api.py -v
 ```
 
-### Test Configuration
+### 9.3 Test Configuration
 - **`SAMPLE_N`** (env var): Number of images to sample per class (default: 3)
 - **`TEST_SERVER_URL`** (env var): Server endpoint (default: http://127.0.0.1:8000)
 
-## Docker Deployment
+## 10. Docker Deployment
 
-### Overview
+### 10.1 Overview
 The project includes a complete Docker setup for containerized deployment:
 - **`Dockerfile`**: Multi-stage image based on Python 3.11-slim with system dependencies, non-root user, and health checks
 - **`docker-compose.yml`**: Orchestration file for local development with API and Jupyter services
 - **`.dockerignore`**: Build context optimization excluding large data/model files
 
-### Quick Start with Docker Compose
+### 10.2 Quick Start with Docker Compose
 
 1. **Build and start services**:
 ```bash
@@ -453,7 +453,7 @@ SAMPLE_N=5 TEST_SERVER_URL=http://127.0.0.1:8000 pytest tests/test_api.py -v
 docker-compose down
 ```
 
-### Docker Run (Without Compose)
+### 10.3 Docker Run (Without Compose)
 
 ```bash
 # Build the image
@@ -476,7 +476,7 @@ docker stop document-verification-api
 docker rm document-verification-api
 ```
 
-### Volume Mounts
+### 10.4 Volume Mounts
 
 The Docker setup uses the following volume mounts:
 
@@ -486,7 +486,7 @@ The Docker setup uses the following volume mounts:
 | `./logs` | `/app/logs` | rw | Training/inference logs for persistence |
 | `./data` | `/app/data` | ro | Input images for batch inference |
 
-### Configuration via Environment Variables
+### 10.5 Configuration via Environment Variables
 
 ```bash
 # Start with custom log level
@@ -496,7 +496,7 @@ docker-compose up -e LOG_LEVEL=debug
 docker run -e LOG_LEVEL=debug -p 8000:8000 document-verification-api:latest
 ```
 
-### Health Checks
+### 10.6 Health Checks
 
 The Dockerfile includes a health check that validates the API every 30 seconds:
 ```
@@ -508,7 +508,7 @@ Monitor container health:
 docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
 
-### Logging
+### 10.7 Logging
 
 View container logs in real-time:
 ```bash
@@ -519,7 +519,7 @@ docker-compose logs -f api
 docker logs -f document-verification-api
 ```
 
-### Production Considerations
+### 10.8 Production Considerations
 
 For production deployment:
 1. **Use a reverse proxy** (Nginx, Traefik) to handle SSL/TLS and load balancing
@@ -531,7 +531,7 @@ For production deployment:
 
 See [DOCKER.md](DOCKER.md) for comprehensive Docker deployment guide including GPU support, Kubernetes, and advanced configurations.
 
-## Configuration
+## 11. Configuration
 
 All hyperparameters are defined in `model.py` (hardcoded configuration block, lines 45-58):
 
@@ -546,21 +546,21 @@ All hyperparameters are defined in `model.py` (hardcoded configuration block, li
 | `OUTPUT_DIR` | `./models` | Directory for saving checkpoints (Kaggle: `./checkpoints`) |
 | `LOG_DIR` | `./logs` | Directory for training logs |
 
-### Environment Detection
+### 11.1 Environment Detection
 The script automatically detects the execution environment:
 - **Kaggle**: Sets `DATA_DIR=/kaggle/input/eu-driver-lincense/data` and `OUTPUT_DIR=./checkpoints`
 - **Local/Server**: Uses relative paths (`./data`, `./models`, `./logs`)
 
-### Advanced Configuration
+### 11.2 Advanced Configuration
 For fine-tuning:
 - Reduce `BATCH_SIZE` if running out of GPU memory
 - Increase `LEARNING_RATE` slightly for faster convergence (use cautiously)
 - Adjust `NUM_EPOCHS` based on convergence patterns observed in logs
 - Modify `VAL_SPLIT` for different train/val proportions (default 80/20 recommended)
 
-## Training Pipeline Details
+## 12. Training Pipeline Details
 
-### Data Processing
+### 12.1 Data Processing
 1. **Image Discovery**: Recursive directory traversal finds all images in `Original/` and `random_doc_images/`
 2. **Format Support**: Automatically detects PNG, JPG, JPEG, BMP, GIF, TIFF files
 3. **Label Assignment**: 
@@ -568,7 +568,7 @@ For fine-tuning:
    - Negative class (0): Images from `random_doc_images/` and subdirectories
 4. **Custom Dataset**: `CustomDataset` class handles efficient loading and caching
 
-### Preprocessing Pipeline
+### 12.2 Preprocessing Pipeline
 **Training**:
 1. Resize shorter side to 256 pixels
 2. Random resized crop to 224×224 with scale [0.8, 1.0]
@@ -582,7 +582,7 @@ For fine-tuning:
 3. Convert to tensor
 4. Normalize with ImageNet statistics
 
-### Training Loop
+### 12.3 Training Loop
 ```
 For each epoch:
   For each phase (train/val):
@@ -596,7 +596,7 @@ For each epoch:
     [Val only] Save checkpoint if new best model found
 ```
 
-### Class Weight Computation
+### 12.4 Class Weight Computation
 ```
 weight[class] = total_samples / (num_classes × count[class])
 ```
@@ -607,15 +607,15 @@ Example from dataset (3,866 total):
 
 This upweights the underrepresented negative class and downweights the overrepresented positive class.
 
-### Reproducibility Features
+### 12.5 Reproducibility Features
 1. **Seeding**: Set seeds for Python `random`, NumPy, PyTorch CPU, and all CUDA devices
 2. **Deterministic Split**: Uses `torch.Generator` with fixed seed for train/val split
 3. **Logged Metadata**: Run start time, seed value, device information all logged
 4. **Validation**: Same seed (42) guarantees identical train/val splits across runs
 
-## Code Architecture
+## 13. Code Architecture
 
-### Main Components
+### 13.1 Main Components
 - **`set_seed(seed)`**: Initializes all random number generators for reproducibility
 - **`CustomDataset`**: PyTorch Dataset subclass for image loading and transformation
 - **`create_dataloaders()`**: Loads data, computes class weights, creates DataLoaders (584 lines total)
@@ -623,14 +623,14 @@ This upweights the underrepresented negative class and downweights the overrepre
 - **`train_model()`**: Main training loop with validation, checkpointing, and logging
 - **`main()`**: Orchestrates the complete pipeline
 
-### Logging System
+### 13.2 Logging System
 - **Dual output**: Logs written to both file (`logs/train_log.txt`) and console simultaneously
 - **Persistent**: All runs append to the same log file with run separators
 - **Timestamped**: Each log entry includes human-readable timestamp (YYYY-MM-DD HH:MM:SS)
 - **Batch-level**: Progress logged every 50 batches during training
 - **Comprehensive**: Logs include metrics, file paths, device info, and metadata
 
-## Requirements
+## 14. Requirements
 
 - **Python**: 3.8+
 - **PyTorch**: 1.9+ (with torchvision)
@@ -646,26 +646,26 @@ This upweights the underrepresented negative class and downweights the overrepre
 
 See `requirements.txt` for exact versions.
 
-## Best Practices & Troubleshooting
+## 15. Best Practices & Troubleshooting
 
-### Data Preparation
+### 15.1 Data Preparation
 - ✓ Ensure all images in `data/Original/` are valid license documents (positive examples)
 - ✓ Place diverse non-license documents in `data/random_doc_images/` and subfolders (negative examples)
 - ✓ Verify image files have supported extensions (.png, .jpg, .jpeg, .bmp, .gif, .tiff)
 - ✓ Remove corrupted or unreadable images to avoid DataLoader errors
 
-### Training Optimization
+### 15.2 Training Optimization
 - ✓ Check `logs/train_log.txt` regularly to monitor loss/accuracy curves
 - ✓ If memory errors occur, reduce `BATCH_SIZE` in `model.py`
 - ✓ If training is slow on CPU, consider using GPU (install CUDA-enabled PyTorch)
 - ✓ For faster experimentation, reduce `NUM_EPOCHS` and test with subset of data
 
-### Reproducibility
+### 15.3 Reproducibility
 - ✓ Always use the same `SEED` value (default: 42) for consistent splits
 - ✓ Keep hardware consistent (CPU vs GPU) as they may produce slightly different floating-point results
 - ✓ Archive `requirements.txt` versions if exact reproducibility is critical
 
-### Troubleshooting Common Issues
+### 15.4 Troubleshooting Common Issues
 
 **Issue**: `FileNotFoundError: data/Original/ not found`
 - **Solution**: Ensure data directory structure matches project structure; place license images in `data/Original/`
@@ -679,7 +679,7 @@ See `requirements.txt` for exact versions.
 **Issue**: Training is very slow
 - **Solution**: Check device in logs; enable GPU support by installing CUDA-enabled PyTorch; verify `num_workers=4` in DataLoaders
 
-## Model Performance
+## 16. Model Performance
 
 After training completes, expected behavior:
 - **Training Loss**: Decreases as model learns
@@ -689,7 +689,7 @@ After training completes, expected behavior:
 
 Best model is saved when validation accuracy is highest.
 
-## License
+## 17. License
 
 This project is licensed under the **MIT License** - see [LICENSE](LICENSE) file for details.
 
@@ -702,7 +702,7 @@ Required: Include the original license and copyright notice in distributions.
 
 ---
 
-## Contributing
+## 18. Contributing
 
 Contributions are welcome! Areas for enhancement:
 - Multi-class classification (beyond binary license/non-license)
@@ -711,7 +711,7 @@ Contributions are welcome! Areas for enhancement:
 - Web/API deployment
 - Real-time inference optimization
 
-## Citation
+## 19. Citation
 
 If you use this project, please cite:
 ```bibtex
