@@ -224,16 +224,42 @@ After successful training:
   - Final weights after all epochs
   - For comparison or analysis
 
-## 7. FastAPI Inference Server
+## 7. Demo Notebooks
 
-### 7.1 Overview
+### 7.1 OCR-Based Verification (`demo_ocr.ipynb`)
+A Jupyter notebook that demonstrates OCR-based verification of EU driving licenses using PaddleOCR:
+- Loads images from `data/Original/` and `data/random_doc_images/`
+- Extracts text using PaddleOCR
+- Parses extracted text to find required marker fields (1, 2, 3, 4a, 4b, 4c, 4d, 5, 7, 8, 9)
+- Reports found and missing markers
+
+**Usage**:
+```bash
+jupyter notebook demo_ocr.ipynb
+```
+
+### 7.2 Face Detection-Based Verification (`demo_face_detection.ipynb`)
+A Jupyter notebook that demonstrates face detection and verification using RetinaFace:
+- Detects faces in images using RetinaFace
+- Validates that exactly one face is present
+- Checks face size is within reasonable bounds (relative to image)
+- Optionally validates face position within a region of interest (ROI)
+
+**Usage**:
+```bash
+jupyter notebook demo_face_detection.ipynb
+```
+
+## 8. FastAPI Inference Server
+
+### 8.1 Overview
 The project includes a production-ready FastAPI inference server (`app.py`) that exposes a `/verify` endpoint for real-time document verification. The server implements a **three-stage verification pipeline**:
 
 1. **Binary Classifier**: Determines if the image is a license document
 2. **OCR Verification**: Extracts text and validates presence of required EU license markers
 3. **Face Detection**: Ensures a single face is present with reasonable size and position
 
-### 7.2 Verification Pipeline Flowchart
+### 8.2 Verification Pipeline Flowchart
 
 ```mermaid
 flowchart TD
@@ -312,7 +338,7 @@ flowchart TD
 - **Face Size**: Relative area must be between 2% and 60% of image
 - **Markers**: All 11 required markers must be found for OCR pass
 
-### 7.3 Running the Server
+### 8.3 Running the Server
 
 1. **Start the inference server**:
 ```bash
@@ -335,7 +361,7 @@ response = requests.post(
 print(response.json())
 ```
 
-### 7.4 API Response Example
+### 8.4 API Response Example
 
 ```json
 {
@@ -362,45 +388,19 @@ print(response.json())
 }
 ```
 
-### 7.5 Configuration
+### 8.5 Configuration
 - **`image_base64`** (required): Base64-encoded image or data URI
 - **`thresh_binary`** (optional): Confidence threshold for license class (default: 0.5)
 
-### 7.6 Startup Model Loading
+### 8.6 Startup Model Loading
 The server loads all models on startup (`load_models` function):
 - EfficientNet-B0 classifier from `models/best_efficientnet_binary.pt` or `models/final_efficientnet_binary.pt`
 - PaddleOCR engine (if installed)
 - RetinaFace detector (if installed)
 - Common torchvision transforms for preprocessing
 
-### 7.7 Thread-Safe Inference
+### 8.7 Thread-Safe Inference
 All blocking operations (model inference, OCR, face detection) are executed in a thread pool to avoid blocking FastAPI's async event loop.
-
-## 8. Demo Notebooks
-
-### 8.1 OCR-Based Verification (`demo_ocr.ipynb`)
-A Jupyter notebook that demonstrates OCR-based verification of EU driving licenses using PaddleOCR:
-- Loads images from `data/Original/` and `data/random_doc_images/`
-- Extracts text using PaddleOCR
-- Parses extracted text to find required marker fields (1, 2, 3, 4a, 4b, 4c, 4d, 5, 7, 8, 9)
-- Reports found and missing markers
-
-**Usage**:
-```bash
-jupyter notebook demo_ocr.ipynb
-```
-
-### 8.2 Face Detection-Based Verification (`demo_face_detection.ipynb`)
-A Jupyter notebook that demonstrates face detection and verification using RetinaFace:
-- Detects faces in images using RetinaFace
-- Validates that exactly one face is present
-- Checks face size is within reasonable bounds (relative to image)
-- Optionally validates face position within a region of interest (ROI)
-
-**Usage**:
-```bash
-jupyter notebook demo_face_detection.ipynb
-```
 
 ## 9. Integration Testing
 
