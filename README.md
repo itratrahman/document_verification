@@ -26,10 +26,15 @@ A comprehensive deep learning-based document verification system using **Efficie
 
 ```
 document_verification/
-├── model.py                    # Main training script (584 lines)
-│                              # Features: EfficientNet-B0, reproducibility, logging
-├── requirements.txt            # Project dependencies (11 packages)
-├── README.md                   # Project documentation
+├── model.py                    # Main training script (EfficientNet-B0, ~584 lines)
+├── app.py                      # FastAPI inference server (~525 lines, heavily commented)
+│                              # Features: model loading, base64 input validation, 3-stage verification
+├── demo_ocr.ipynb              # Jupyter notebook demonstrating PaddleOCR-based verification
+│                              # Extracts text and verifies presence of EU license markers
+├── demo_face_detection.ipynb   # Jupyter notebook demonstrating RetinaFace-based verification
+│                              # Detects single face and validates size/position
+├── requirements.txt            # Project dependencies (fastapi, uvicorn, pytest, requests, etc.)
+├── README.md                   # Project documentation (this file)
 ├── LICENSE                     # MIT License
 ├── data/                       # Training and validation data (~3,866 total samples)
 │   ├── Original/               # Positive class: 3,000 license images
@@ -51,9 +56,11 @@ document_verification/
 │   └── Original/README.md
 ├── models/                     # Model output directory (final and best checkpoints)
 │   └── README.md               # Models folder documentation
-├── checkpoints/                # Alternate checkpoint location (for Kaggle environments)
 ├── logs/                       # Training logs (appending to single log file)
 │   └── train_log.txt           # Timestamped training history with run metadata
+├── tests/                      # Integration test suite
+│   └── test_api.py             # Unit tests for /verify endpoint (uses pytest + requests)
+├── checkpoints/                # Alternate checkpoint location (for Kaggle environments)
 └── .git/                       # Version control
 ```
 
@@ -208,6 +215,134 @@ After successful training:
 - **Final Model**: `models/final_efficientnet_binary.pt`
   - Final weights after all epochs
   - For comparison or analysis
+
+## FastAPI Inference Server
+
+### Overview
+The project includes a production-ready FastAPI inference server (`app.py`) that exposes a `/verify` endpoint for real-time document verification. The server implements a **three-stage verification pipeline**:
+
+1. **Binary Classifier**: Determines if the image is a license document
+2. **OCR Verification**: Extracts text and validates presence of required EU license markers
+3. **Face Detection**: Ensures a single face is present with reasonable size and position
+
+### Running the Server
+
+1. **Start the inference server**:
+```bash
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+2. **Send a verification request** (using curl or Python):
+```bash
+# Example with Python requests
+import requests
+import base64
+
+with open('path/to/image.png', 'rb') as f:
+    b64_image = base64.b64encode(f.read()).decode('ascii')
+
+response = requests.post(
+    'http://127.0.0.1:8000/verify',
+    json={'image_base64': b64_image, 'thresh_binary': 0.5}
+)
+print(response.json())
+```
+
+### API Response Example
+
+```json
+{
+  "ok": true,
+  "binary": {
+    "predicted_label": 1,
+    "probabilities": [0.15, 0.85],
+    "passed": true
+  },
+  "ocr": {
+    "available": true,
+    "raw_text": ["1.", "2.", "3.", ...],
+    "found_markers": ["1", "2", "3", "4a", "4b", "4c", "4d", "5", "7", "8", "9"],
+    "missing_markers": [],
+    "is_valid_format": true
+  },
+  "face": {
+    "available": true,
+    "ok": true,
+    "reason": "single_face_ok",
+    "num_faces": 1,
+    "faces": [{"score": 0.98, "box": [100, 150, 300, 400]}]
+  }
+}
+```
+
+### Configuration
+- **`image_base64`** (required): Base64-encoded image or data URI
+- **`thresh_binary`** (optional): Confidence threshold for license class (default: 0.5)
+
+### Startup Model Loading
+The server loads all models on startup (`load_models` function):
+- EfficientNet-B0 classifier from `models/best_efficientnet_binary.pt` or `models/final_efficientnet_binary.pt`
+- PaddleOCR engine (if installed)
+- RetinaFace detector (if installed)
+- Common torchvision transforms for preprocessing
+
+### Thread-Safe Inference
+All blocking operations (model inference, OCR, face detection) are executed in a thread pool to avoid blocking FastAPI's async event loop.
+
+## Demo Notebooks
+
+### OCR-Based Verification (`demo_ocr.ipynb`)
+A Jupyter notebook that demonstrates OCR-based verification of EU driving licenses using PaddleOCR:
+- Loads images from `data/Original/` and `data/random_doc_images/`
+- Extracts text using PaddleOCR
+- Parses extracted text to find required marker fields (1, 2, 3, 4a, 4b, 4c, 4d, 5, 7, 8, 9)
+- Reports found and missing markers
+
+**Usage**:
+```bash
+jupyter notebook demo_ocr.ipynb
+```
+
+### Face Detection-Based Verification (`demo_face_detection.ipynb`)
+A Jupyter notebook that demonstrates face detection and verification using RetinaFace:
+- Detects faces in images using RetinaFace
+- Validates that exactly one face is present
+- Checks face size is within reasonable bounds (relative to image)
+- Optionally validates face position within a region of interest (ROI)
+
+**Usage**:
+```bash
+jupyter notebook demo_face_detection.ipynb
+```
+
+## Integration Testing
+
+### Test Suite (`tests/test_api.py`)
+The project includes pytest-based integration tests that exercise the `/verify` endpoint:
+- Samples `n` positive images from `data/Original/`
+- Samples `n` negative images from `data/random_doc_images/`
+- Posts each image to the running server
+- Asserts response structure and HTTP status codes
+
+### Running Tests
+
+1. **Start the server** in one terminal:
+```bash
+uvicorn app:app --port 8000
+```
+
+2. **Run tests** in another terminal:
+```bash
+# Run with default 3 samples per class
+pytest tests/test_api.py -v
+
+# Or customize sample count and server URL
+SAMPLE_N=5 TEST_SERVER_URL=http://127.0.0.1:8000 pytest tests/test_api.py -v
+```
+
+### Test Configuration
+- **`SAMPLE_N`** (env var): Number of images to sample per class (default: 3)
+- **`TEST_SERVER_URL`** (env var): Server endpoint (default: http://127.0.0.1:8000)
 
 ## Configuration
 
