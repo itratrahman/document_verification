@@ -692,8 +692,8 @@ See `requirements.txt` for exact versions.
 After training completes, expected behavior:
 - **Training Loss**: Decreases as model learns
 - **Validation Loss**: Should decrease, plateau, or slightly increase (overfitting indicator)
-- **Training Accuracy**: Increases toward 95%+
-- **Validation Accuracy**: Typically 85-95% depending on data quality and class balance
+- **Training Accuracy**: Increases toward 99%+
+- **Validation Accuracy**: Typically above 97% depending on data quality and class balance
 
 Best model is saved when validation accuracy is highest.
 
