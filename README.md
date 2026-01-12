@@ -1,6 +1,6 @@
 # Document Verification Project
 
-A comprehensive AI-based and OCR-based document verification system using **EfficientNet-B0** for binary classification of EU Driving License documents. This project automatically distinguishes between authentic license images and other document types using transfer learning with ImageNet-pretrained weights.
+A comprehensive AI-based, OCR-based, and facial verification-based document verification system using **EfficientNet-B0**, **PaddleOCR**, and **RetinaFace** for verification of EU Driving License. This project automatically distinguishes between authentic license images and other document types.
 
 ## Overview
 
@@ -638,7 +638,7 @@ If you use this project, please cite:
 ```bibtex
 @misc{document_verification_2026,
   title={Document Verification: Deep Learning-Based License Classification},
-  author={Your Name},
+  author={Itrat Rahman},
   year={2026},
   howpublished={\url{https://github.com/yourusername/document_verification}}
 }
