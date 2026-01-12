@@ -137,4 +137,5 @@ Desktop.ini
 
 # Logs and reports
 logs/
+mlruns/
 

@@ -35,6 +35,10 @@ import copy  # used for deep copying model state_dict
 # Import datetime to get human-readable date and time for log filenames
 from datetime import datetime  # used to format current date/time for log filenames
 
+# Import mlflow for experiment tracking
+import mlflow  # used to log parameters, metrics, and artifacts
+import mlflow.pytorch  # used to log PyTorch models as MLflow artifacts
+
 
 # -----------------------------
 # Hardcoded configuration block
@@ -83,6 +87,20 @@ VAL_SPLIT = 0.2  # proportion of data reserved for validation
 
 # Define a random seed for reproducibility
 SEED = 42  # fixed seed for deterministic behavior
+
+
+# -----------------------------
+# MLflow configuration block
+# -----------------------------
+
+# Define the MLflow experiment name for this training script
+MLFLOW_EXPERIMENT_NAME = "efficientnet_binary_classifier"  # MLflow experiment name
+
+# Define the MLflow tracking URI (defaults to local file store under ./mlruns)
+MLFLOW_TRACKING_URI = os.environ.get(
+    "MLFLOW_TRACKING_URI",
+    f"file:{os.path.join(SCRIPT_DIR, 'mlruns')}"
+)  # MLflow tracking backend
 
 
 # ---------------------------
@@ -181,10 +199,10 @@ class CustomDataset(torch.utils.data.Dataset):
     def __init__(self, samples, transform=None):  # initialize with samples and transform
         self.samples = samples  # store sample list
         self.transform = transform  # store transform
-    
+
     def __len__(self):  # return dataset length
         return len(self.samples)  # number of samples
-    
+
     def __getitem__(self, idx):  # get single sample
         img_path, label = self.samples[idx]  # get sample path and label
         img = Image.open(img_path).convert('RGB')  # load image as RGB
@@ -299,6 +317,17 @@ def create_dataloaders(data_dir, batch_size, val_split, seed):
     # Log the computed class weights
     logger.info(f"Computed class weights (by index): {class_weights.tolist()}")  # record weights used for loss
 
+    # Log dataset statistics and class weights to MLflow
+    mlflow.log_params({
+        "dataset_size": dataset_size,
+        "train_size": train_size,
+        "val_size": val_size,
+        "positive_count": positive_count,
+        "negative_count": negative_count,
+        "class_weight_0": float(class_weights[0].item()) if len(class_weights) > 0 else 0.0,
+        "class_weight_1": float(class_weights[1].item()) if len(class_weights) > 1 else 0.0
+    })  # store dataset stats in MLflow
+
     # Create a generator with a fixed seed to make random splits reproducible
     generator = torch.Generator().manual_seed(seed)  # seeded generator for deterministic split
 
@@ -369,6 +398,9 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
     # Log the start of the training process
     logger.info("Starting training loop")  # indicate training start
 
+    # Initialize a global step counter for MLflow batch-level logging
+    global_step = 0  # global step across epochs/phases for batch metrics
+
     # Record the start time for the entire training
     since = time.time()  # timestamp at training start
 
@@ -389,6 +421,10 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
         # Log the start of a new epoch
         logger.info(f"Epoch {epoch + 1}/{num_epochs} started")  # record epoch start
 
+        # Log the current learning rate for this epoch to MLflow
+        current_lr = optimizer.param_groups[0]["lr"]  # current learning rate
+        mlflow.log_metric("lr", current_lr, step=epoch + 1)  # track learning rate over epochs
+
         # Loop over two phases: 'train' and 'val'
         for phase in ["train", "val"]:  # iterate over training and validation phases
             # Log which phase we are in
@@ -404,6 +440,19 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
             # Initialize variables to track running loss and correct predictions
             running_loss = 0.0  # accumulated loss for this phase
             running_corrects = 0  # accumulated correct predictions
+
+            # Start a timer for this phase to compute throughput
+            phase_start_time = time.time()  # phase start timestamp
+
+            # Track confusion-matrix components for binary classification
+            tp = 0  # true positives
+            tn = 0  # true negatives
+            fp = 0  # false positives
+            fn = 0  # false negatives
+
+            # Reset GPU peak memory stats for this phase (if using CUDA)
+            if device.type == "cuda":  # check CUDA device
+                torch.cuda.reset_peak_memory_stats()  # reset peak memory tracker
 
             # Select the appropriate DataLoader for the current phase
             data_loader = dataloaders[phase]  # choose train or val dataloader
@@ -427,6 +476,14 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
                     # Select the class with the highest logit for each sample as the prediction
                     _, preds = torch.max(outputs, 1)  # predicted class indices
 
+                    # Update confusion-matrix counters (assumes class 1 is positive)
+                    pred_pos = preds == 1  # predicted positives
+                    label_pos = labels.data == 1  # actual positives
+                    tp += torch.sum(pred_pos & label_pos).item()  # increment TP
+                    tn += torch.sum((~pred_pos) & (~label_pos)).item()  # increment TN
+                    fp += torch.sum(pred_pos & (~label_pos)).item()  # increment FP
+                    fn += torch.sum((~pred_pos) & label_pos).item()  # increment FN
+
                     # Compute the loss between model outputs and ground truth labels
                     loss = criterion(outputs, labels)  # compute weighted cross-entropy loss
 
@@ -441,6 +498,9 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
                 # Count how many predictions match the ground truth labels and accumulate
                 running_corrects += torch.sum(preds == labels.data)  # aggregate corrects
 
+                # Increment the global step counter for MLflow batch-level logging
+                global_step += 1  # advance global step
+
                 # Optionally log progress every N batches (here N=50) to avoid too much logging
                 if (batch_idx + 1) % 50 == 0:  # log every 50 batches
                     logger.info(
@@ -448,6 +508,11 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
                         f"Phase [{phase}], "
                         f"Batch [{batch_idx + 1}/{len(data_loader)}]"  # log mini-progress
                     )
+
+                    # Log batch-level metrics to MLflow (aligned with the existing 50-batch log interval)
+                    batch_acc = (torch.sum(preds == labels.data).item() / float(inputs.size(0))) if inputs.size(0) > 0 else 0.0  # batch accuracy
+                    mlflow.log_metric(f"{phase}_batch_loss", float(loss.item()), step=global_step)  # batch loss
+                    mlflow.log_metric(f"{phase}_batch_acc", float(batch_acc), step=global_step)  # batch accuracy
 
             # Compute the total number of samples in this phase
             dataset_size = len(data_loader.dataset)  # number of samples in this phase
@@ -460,6 +525,46 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
 
             # Log the loss and accuracy for this epoch and phase
             logger.info(f"{phase} - Epoch {epoch + 1}/{num_epochs} - Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.4f}")  # record metrics
+
+            # Compute derived metrics from confusion matrix (binary classification)
+            precision = (tp / (tp + fp)) if (tp + fp) > 0 else 0.0  # precision
+            recall = (tp / (tp + fn)) if (tp + fn) > 0 else 0.0  # recall (sensitivity)
+            f1 = ((2.0 * precision * recall) / (precision + recall)) if (precision + recall) > 0 else 0.0  # F1 score
+            specificity = (tn / (tn + fp)) if (tn + fp) > 0 else 0.0  # specificity
+            balanced_acc = (0.5 * (recall + specificity))  # balanced accuracy
+
+            # Matthews correlation coefficient (MCC)
+            mcc_denom = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5  # MCC denominator
+            mcc = (((tp * tn) - (fp * fn)) / mcc_denom) if mcc_denom > 0 else 0.0  # MCC
+
+            # Compute phase timing and throughput
+            phase_time_sec = time.time() - phase_start_time  # elapsed seconds for phase
+            samples_per_sec = (dataset_size / phase_time_sec) if phase_time_sec > 0 else 0.0  # throughput
+
+            # Log epoch-level metrics to MLflow
+            mlflow.log_metric(f"{phase}_loss", float(epoch_loss), step=epoch + 1)  # epoch loss
+            mlflow.log_metric(f"{phase}_acc", float(epoch_acc.item()), step=epoch + 1)  # epoch accuracy
+            mlflow.log_metric(f"{phase}_precision", float(precision), step=epoch + 1)  # precision
+            mlflow.log_metric(f"{phase}_recall", float(recall), step=epoch + 1)  # recall
+            mlflow.log_metric(f"{phase}_f1", float(f1), step=epoch + 1)  # f1
+            mlflow.log_metric(f"{phase}_specificity", float(specificity), step=epoch + 1)  # specificity
+            mlflow.log_metric(f"{phase}_balanced_acc", float(balanced_acc), step=epoch + 1)  # balanced accuracy
+            mlflow.log_metric(f"{phase}_mcc", float(mcc), step=epoch + 1)  # mcc
+
+            # Log confusion-matrix counts to MLflow
+            mlflow.log_metric(f"{phase}_tp", float(tp), step=epoch + 1)  # true positives
+            mlflow.log_metric(f"{phase}_tn", float(tn), step=epoch + 1)  # true negatives
+            mlflow.log_metric(f"{phase}_fp", float(fp), step=epoch + 1)  # false positives
+            mlflow.log_metric(f"{phase}_fn", float(fn), step=epoch + 1)  # false negatives
+
+            # Log performance timing to MLflow
+            mlflow.log_metric(f"{phase}_time_sec", float(phase_time_sec), step=epoch + 1)  # phase time
+            mlflow.log_metric(f"{phase}_samples_per_sec", float(samples_per_sec), step=epoch + 1)  # throughput
+
+            # Log GPU memory metrics to MLflow (if using CUDA)
+            if device.type == "cuda":  # check CUDA device
+                mlflow.log_metric(f"{phase}_gpu_max_memory_allocated_mb", float(torch.cuda.max_memory_allocated() / (1024 ** 2)), step=epoch + 1)  # peak allocated
+                mlflow.log_metric(f"{phase}_gpu_max_memory_reserved_mb", float(torch.cuda.max_memory_reserved() / (1024 ** 2)), step=epoch + 1)  # peak reserved
 
             # If this is the validation phase, check if accuracy is better than previous best
             if phase == "val":  # validation phase check
@@ -480,6 +585,10 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
                     # Log that we achieved a new best validation accuracy
                     logger.info(f"New best model saved with val acc: {best_acc:.4f} at {best_model_path}")  # record new best
 
+                    # Log best validation accuracy and checkpoint to MLflow
+                    mlflow.log_metric("best_val_acc", float(best_acc.item()) if hasattr(best_acc, "item") else float(best_acc), step=epoch + 1)  # best val acc
+                    mlflow.log_artifact(best_model_path, artifact_path="checkpoints")  # store best checkpoint
+
         # Log that the epoch has completed
         logger.info(f"Epoch {epoch + 1}/{num_epochs} completed")  # mark epoch end
 
@@ -491,6 +600,10 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
 
     # Log the best validation accuracy achieved
     logger.info(f"Best validation accuracy: {best_acc:.4f}")  # best val accuracy
+
+    # Log final summary metrics to MLflow
+    mlflow.log_metric("final_best_val_acc", float(best_acc.item()) if hasattr(best_acc, "item") else float(best_acc))  # final best val acc
+    mlflow.log_metric("total_training_time_sec", float(time_elapsed))  # total training time
 
     # Load the best weights into the model before returning
     model.load_state_dict(best_model_wts)  # restore best model weights
@@ -514,6 +627,32 @@ def main():
 
     # Log which device is being used
     logger.info(f"Using device: {device}")  # record device choice
+
+    # Configure MLflow tracking
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)  # set MLflow backend store
+    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)  # set MLflow experiment
+
+    # Start an MLflow run to track this training session
+    run_name = f"efficientnet_b0_binary_{run_date_str}_{run_time_str.replace(':', '-')}"  # human-readable run name
+    mlflow.start_run(run_name=run_name)  # begin MLflow run
+
+    # Log run-level parameters and tags
+    mlflow.set_tags({
+        "is_kaggle": str(IS_KAGGLE),
+        "device": str(device),
+        "script_dir": SCRIPT_DIR,
+        "data_dir": DATA_DIR,
+        "output_dir": OUTPUT_DIR
+    })  # store metadata tags
+
+    mlflow.log_params({
+        "num_epochs": NUM_EPOCHS,
+        "batch_size": BATCH_SIZE,
+        "learning_rate": LEARNING_RATE,
+        "val_split": VAL_SPLIT,
+        "seed": SEED,
+        "model_arch": "torchvision.efficientnet_b0"
+    })  # store hyperparameters
 
     # Create the training and validation DataLoaders and get class information
     train_loader, val_loader, num_classes, class_weights = create_dataloaders(
@@ -572,6 +711,14 @@ def main():
 
     # Log that the final model has been saved
     logger.info(f"Final model saved to: {final_model_path}")  # record final model file path
+
+    # Log artifacts to MLflow
+    mlflow.log_artifact(LOG_FILENAME, artifact_path="logs")  # store python logger output
+    mlflow.log_artifact(final_model_path, artifact_path="checkpoints")  # store final checkpoint
+    mlflow.pytorch.log_model(trained_model, artifact_path="pytorch_model")  # store full model
+
+    # End the MLflow run
+    mlflow.end_run()  # finalize MLflow logging
 
     # Log that the main function execution has finished
     logger.info("Main function finished")  # main end marker
