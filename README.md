@@ -235,9 +235,9 @@ flowchart TD
     Stage1 --> |Input Image| Preprocess1[Preprocess Image<br/>- Resize to 256px<br/>- Center crop 224x224<br/>- Normalize ImageNet stats]
     Preprocess1 --> EfficientNet[EfficientNet-B0<br/>Binary Classifier]
     EfficientNet --> Softmax[Softmax Probabilities]
-    Softmax --> Threshold{Probability[1] >= thresh?<br/>Default: 0.5}
-    Threshold --> |Yes| Pass1[✓ Binary Check Passed<br/>predicted_label: 1<br/>probabilities: [0.15, 0.85]]
-    Threshold --> |No| Fail1[✗ Binary Check Failed<br/>predicted_label: 0<br/>probabilities: [0.92, 0.08]]
+    Softmax --> Threshold{"Probability(class 1) >= thresh?<br/>Default: 0.5"}
+    Threshold --> |Yes| Pass1["✓ Binary Check Passed<br/>predicted_label: 1<br/>probabilities: (0.15, 0.85)"]
+    Threshold --> |No| Fail1["✗ Binary Check Failed<br/>predicted_label: 0<br/>probabilities: (0.92, 0.08)"]
     
     Pass1 --> Stage2
     Fail1 --> Stage2
@@ -247,8 +247,8 @@ flowchart TD
     PaddleOCR --> Normalize[Normalize Text<br/>- Lowercase<br/>- Strip whitespace]
     Normalize --> SearchMarkers[Search for EU License Markers<br/>1, 2, 3, 4a, 4b, 4c, 4d, 5, 7, 8, 9]
     SearchMarkers --> MarkerCheck{All markers found?}
-    MarkerCheck --> |Yes| Pass2[✓ OCR Check Passed<br/>is_valid_format: true<br/>missing_markers: []]
-    MarkerCheck --> |No| Fail2[✗ OCR Check Failed<br/>is_valid_format: false<br/>missing_markers: [4a, 9]]
+    MarkerCheck --> |Yes| Pass2["✓ OCR Check Passed<br/>is_valid_format: true<br/>missing_markers: empty"]
+    MarkerCheck --> |No| Fail2["✗ OCR Check Failed<br/>is_valid_format: false<br/>missing_markers: (4a, 9)"]
     
     Pass2 --> Stage3
     Fail2 --> Stage3
@@ -294,9 +294,9 @@ flowchart TD
 
 | Component | Technology | Purpose | Output |
 |-----------|-----------|---------|--------|
-| **Deep Learning Inference** | EfficientNet-B0 | Binary classification (license vs. non-license) | `predicted_label`, `probabilities[2]`, `passed` |
+| **Deep Learning Inference** | EfficientNet-B0 | Binary classification (license vs. non-license) | `predicted_label`, `probabilities(2)`, `passed` |
 | **OCR Marker Check** | PaddleOCR | Extract text and verify EU license markers (1-9, 4a-4d) | `found_markers`, `missing_markers`, `is_valid_format` |
-| **Facial Detection** | RetinaFace | Detect and validate single face with proper size | `num_faces`, `faces[]`, `ok`, `reason` |
+| **Facial Detection** | RetinaFace | Detect and validate single face with proper size | `num_faces`, `faces list`, `ok`, `reason` |
 
 **Decision Logic:**
 - **Overall Pass**: `ok = binary.passed AND ocr.is_valid_format AND face.ok`
