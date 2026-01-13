@@ -187,11 +187,11 @@ def load_models():
     # ----------------------------
     try:
         # Lazy import: avoids import-time failures if retinaface isn't installed.
-        from retinaface import RetinaFace
-
-        # Some retinaface packages expose a class with static methods (e.g., detect_faces).
-        # We store the reference so we can call RF.detect_faces(...) later.
-        app.state.retinaface = RetinaFace
+        from retinaface.pre_trained_models import get_model
+        
+        # Initialize RetinaFace model with PyTorch backend
+        app.state.retinaface = get_model("resnet50_2020-07-20", max_size=2048)
+        app.state.retinaface.eval()
 
         logger.info("RetinaFace available")
     except Exception as e:
@@ -368,38 +368,28 @@ def run_face_verification(img: Image.Image) -> Dict[str, Any]:
         # Service is running but face detector dependency is missing.
         return {"available": False, "message": "RetinaFace not installed"}
 
-    # Convert PIL image to NumPy BGR array for typical CV model expectations.
+    # Convert PIL image to NumPy RGB array for PyTorch model
     import numpy as np  # Local import to keep startup lighter
-    import cv2  # Used for optional fallback temp-file write (if ndarray input fails)
+    import torch
 
-    arr = np.array(img)[:, :, ::-1].copy()  # RGB -> BGR for OpenCV/RetinaFace compatibility
+    arr = np.array(img)  # Keep as RGB for retinaface-pytorch
 
-    # Attempt to detect faces directly from the ndarray.
-    # Some RetinaFace wrappers accept arrays; others only accept file paths.
+    # Detect faces using PyTorch RetinaFace
     try:
-        detections_raw = RF.detect_faces(arr)
-    except Exception:
-        # If ndarray input isn't supported, fall back to writing a temporary file.
-        import tempfile  # Create a safe temporary file path
-        _, tmp = tempfile.mkstemp(suffix='.png')  # Create temp file (returns fd, path)
-        cv2.imwrite(tmp, arr)  # Write the BGR image to disk
-        detections_raw = RF.detect_faces(tmp)  # Detect faces from the file path
-
-        # Best-effort cleanup of the temp file.
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
+        with torch.no_grad():
+            detections_raw = RF.predict_jsons(arr, confidence_threshold=0.5)
+    except Exception as e:
+        return {"available": False, "message": f"Face detection failed: {str(e)}"}
 
     # Normalize detections into a list of faces with a score + bounding box.
     faces = []
-    if isinstance(detections_raw, dict):
-        for _, det in detections_raw.items():
-            score = float(det.get("score", 0.0))  # Confidence score
-            x1, y1, x2, y2 = det["facial_area"]  # Bounding box coordinates
+    for det in detections_raw:
+        score = float(det.get("score", 0.0))  # Confidence score
+        bbox = det.get("bbox", [])  # Bounding box [x1, y1, x2, y2]
+        if len(bbox) == 4:
             faces.append({
                 "score": score,
-                "box": [int(x1), int(y1), int(x2), int(y2)],
+                "box": [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])],
             })
 
     # Basic verification: compute relative face size compared to total image area.

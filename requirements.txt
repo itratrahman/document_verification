@@ -6,7 +6,7 @@ torchvision
 paddlepaddle
 paddleocr
 opencv-python
-retinaface
+retinaface-pytorch
 Pillow
 fastapi
 uvicorn[standard]
