@@ -1,3 +1,5 @@
+pytest
+requests
 numpy
 matplotlib
 scipy
@@ -8,7 +10,6 @@ paddleocr
 opencv-python
 retinaface-pytorch
 Pillow
+mlflow
 fastapi
 uvicorn[standard]
-pytest
-requests
