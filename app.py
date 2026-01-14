@@ -181,7 +181,7 @@ def load_models():
     ])
 
     # ----------------------------
-    # PaddleOCR initialization (optional dependency)
+    # PaddleOCR initialization (required dependency)
     # ----------------------------
     try:
         # Lazy import: avoids import-time failures if PaddleOCR isn't installed.
@@ -193,27 +193,27 @@ def load_models():
         app.state.ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
         logger.info("PaddleOCR initialized")
-    except Exception as e:
-        # If OCR isn't installed, we keep the service alive and return "available=False" later.
-        logger.warning(f"PaddleOCR not available: {e}")
-        app.state.ocr = None  # Signal to downstream functions that OCR is disabled
+    except Exception:
+        # If OCR init fails, the API should not start (better than serving broken inference).
+        logger.exception("Failed to initialize PaddleOCR")
+        raise  # Re-raise so FastAPI/Uvicorn fails fast and shows the stack trace
 
     # ----------------------------
-    # RetinaFace initialization (optional dependency)
+    # RetinaFace initialization (required dependency)
     # ----------------------------
     try:
         # Lazy import: avoids import-time failures if retinaface isn't installed.
-        from retinaface.pre_trained_models import get_model
+        from retinaface import RetinaFace
         
-        # Initialize RetinaFace model with PyTorch backend
-        app.state.retinaface = get_model("resnet50_2020-07-20", max_size=2048)
-        app.state.retinaface.eval()
+        # Store the RetinaFace module for use in detection
+        # retinaface-pytorch uses a functional API, not object instantiation
+        app.state.retinaface = RetinaFace
 
-        logger.info("RetinaFace available")
-    except Exception as e:
-        # If face detection isn't installed, we keep the service alive and return "available=False".
-        logger.warning(f"RetinaFace not available: {e}")
-        app.state.retinaface = None  # Signal to downstream functions that face check is disabled
+        logger.info("RetinaFace initialized")
+    except Exception:
+        # If face detection init fails, the API should not start (better than serving broken inference).
+        logger.exception("Failed to initialize RetinaFace")
+        raise  # Re-raise so FastAPI/Uvicorn fails fast and shows the stack trace
 
     # ----------------------------
     # MongoDB connection (optional)
@@ -403,20 +403,10 @@ def run_ocr_verification(img: Image.Image) -> Dict[str, Any]:
     - Normalize and search for markers like "1", "2", "3", "4a"... that are commonly
       printed near fields on certain IDs/licenses.
     - If all markers are found, return `is_valid_format=True`.
-
-    If PaddleOCR isn't installed or fails to initialize, returns available=False.
     """
     stage_start = time.time()
     
-    ocr = app.state.ocr  # OCR engine (or None if unavailable)
-    if ocr is None:
-        # Service is running but OCR dependency is missing.
-        return {
-            "available": False,
-            "message": "PaddleOCR not installed",
-            "duration_ms": 0,
-            "status": "skipped"
-        }
+    ocr = app.state.ocr  # OCR engine (guaranteed to be available)
 
     # PaddleOCR can accept a file path or an ndarray image.
     # Convert PIL RGB -> NumPy array -> BGR (OpenCV-like) ordering.
@@ -504,20 +494,10 @@ def run_face_verification(img: Image.Image) -> Dict[str, Any]:
     - Face bounding box area is within a reasonable fraction of the image:
         - not too small (likely noise)
         - not too large (likely incorrect detection / cropped face)
-
-    If RetinaFace isn't installed or fails to initialize, returns available=False.
     """
     stage_start = time.time()
     
-    RF = app.state.retinaface  # Stored RetinaFace reference (or None if unavailable)
-    if RF is None:
-        # Service is running but face detector dependency is missing.
-        return {
-            "available": False,
-            "message": "RetinaFace not installed",
-            "duration_ms": 0,
-            "status": "skipped"
-        }
+    RF = app.state.retinaface  # Stored RetinaFace reference (guaranteed to be available)
 
     # Convert PIL image to NumPy RGB array for PyTorch model
     import numpy as np  # Local import to keep startup lighter
@@ -531,8 +511,8 @@ def run_face_verification(img: Image.Image) -> Dict[str, Any]:
     # Detect faces using PyTorch RetinaFace
     detection_start = time.time()
     try:
-        with torch.no_grad():
-            detections_raw = RF.predict_jsons(arr, confidence_threshold=0.5)
+        # Use the detect_faces method from retinaface-pytorch
+        detections_raw = RF.detect_faces(arr, threshold=0.5)
     except Exception as e:
         return {
             "available": False,
@@ -545,11 +525,12 @@ def run_face_verification(img: Image.Image) -> Dict[str, Any]:
     # Normalize detections into a list of faces with a score + bounding box.
     postprocess_start = time.time()
     faces = []
-    for det in detections_raw:
+    # retinaface-pytorch returns a dict where keys are face indices
+    for face_idx, det in detections_raw.items():
         score = float(det.get("score", 0.0))  # Confidence score
-        bbox = det.get("bbox", [])  # Bounding box [x1, y1, x2, y2]
-        if len(bbox) == 4:
-            box_coords = [int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])]
+        facial_area = det.get("facial_area", [])  # Bounding box [x1, y1, x2, y2]
+        if len(facial_area) == 4:
+            box_coords = [int(facial_area[0]), int(facial_area[1]), int(facial_area[2]), int(facial_area[3])]
             face_area = max(0, box_coords[2] - box_coords[0]) * max(0, box_coords[3] - box_coords[1])
             rel_area = face_area / img_area if img_area > 0 else 0.0
             aspect_ratio = (box_coords[3] - box_coords[1]) / max(1, box_coords[2] - box_coords[0])
