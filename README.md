@@ -34,12 +34,13 @@ This project implements a **three-stage verification pipeline** combining deep l
 ### 2.2 Inference & API
 - **Three-Stage Verification Pipeline**: Sequential validation through deep learning classification, OCR marker detection, and facial recognition
 - **Production-Ready FastAPI Server**: RESTful API with automatic Swagger UI documentation, Pydantic validation, and structured JSON responses
+- **MongoDB Inference Logging**: Comprehensive async logging of all requests with performance metrics, decision tracking, and environment context
 - **Thread-Safe Inference**: CPU/GPU-bound operations (model inference, OCR, face detection) executed in threadpool to maintain async event loop responsiveness
-- **Multi-Model Orchestration**: Coordinates EfficientNet-B0, PaddleOCR, and RetinaFace models with graceful degradation when optional dependencies are unavailable
+- **Multi-Model Orchestration**: Coordinates EfficientNet-B0, PaddleOCR, and RetinaFace models with fail-fast startup validation
 - **Secure Image Handling**: Base64 decoding with data URI support, size limit enforcement (8MB default), and input validation to prevent memory exhaustion
 - **Lazy Model Loading**: Models loaded once at server startup with efficient state management via `app.state` for zero-latency subsequent requests
 - **Configurable Thresholds**: Adjustable confidence thresholds for binary classification and face size constraints for flexible deployment scenarios
-- **Real-Time Performance**: Optimized preprocessing pipeline with GPU acceleration and batch processing capabilities
+- **Real-Time Performance**: Optimized preprocessing pipeline with GPU acceleration and detailed per-stage timing breakdowns
 
 ### 2.3 Deployment & Testing
 - **Docker Containerization**: Multi-stage Dockerfile with health checks, non-root user, and docker-compose orchestration
@@ -53,13 +54,15 @@ This project implements a **three-stage verification pipeline** combining deep l
 ```
 document_verification/
 ├── model.py                    # Main training script (EfficientNet-B0, ~584 lines)
-├── app.py                      # FastAPI inference server (~525 lines, heavily commented)
-│                              # Features: model loading, base64 input validation, 3-stage verification
+├── app.py                      # FastAPI inference server (~875 lines, heavily commented)
+│                              # Features: model loading, base64 input validation, 3-stage verification, MongoDB logging
 ├── demo_ocr.ipynb              # Jupyter notebook demonstrating PaddleOCR-based verification
 │                              # Extracts text and verifies presence of EU license markers
 ├── demo_face_detection.ipynb   # Jupyter notebook demonstrating RetinaFace-based verification
 │                              # Detects single face and validates size/position
-├── requirements.txt            # Project dependencies (fastapi, uvicorn, pytest, requests, etc.)
+├── mongodb-init.js             # MongoDB initialization script (creates collections, indexes, views)
+├── MONGODB_SETUP_INSTRUCTIONS.md # Comprehensive MongoDB setup guide for Windows and Docker
+├── requirements.txt            # Project dependencies (fastapi, uvicorn, motor, pymongo, pytest, etc.)
 ├── README.md                   # Project documentation (this file)
 ├── LICENSE                     # MIT License
 ├── data/                       # Training and validation data (~3,866 total samples)
@@ -419,6 +422,276 @@ The server loads all models on startup (`load_models` function):
 
 ### 8.7 Thread-Safe Inference
 All blocking operations (model inference, OCR, face detection) are executed in a thread pool to avoid blocking FastAPI's async event loop.
+
+### 8.8 MongoDB Inference Logging
+
+The FastAPI server includes comprehensive MongoDB integration for logging all inference requests with detailed performance metrics and decision tracking.
+
+#### 8.8.1 Overview
+
+Every inference request to the `/verify` endpoint is automatically logged to MongoDB with:
+- **Unique Request Tracking**: UUID for each request with complete audit trail
+- **Performance Metrics**: Detailed timing for each pipeline stage (preprocessing, classifier, OCR, face detection)
+- **Decision Factors**: Tracks which checks passed/failed and why
+- **Environment Context**: Device type (CPU/GPU), hostname, container ID, model versions
+- **Input Metadata**: Image hash (SHA256), dimensions, format, and size for deduplication
+- **Client Information**: IP address and user agent for request tracking
+
+#### 8.8.2 Database Schema
+
+The logging system uses three MongoDB collections:
+
+1. **`inference_logs`**: Main collection storing all inference requests
+   - Schema validation with required fields (request_id, timestamp, api_version, input, environment, response, performance)
+   - 11 indexes for optimized queries (timestamp, image_hash, device, errors, performance metrics)
+   - TTL index support for automatic cleanup of old logs
+
+2. **`model_registry`**: Tracks deployed model versions
+   - Records: EfficientNet-B0, PaddleOCR, RetinaFace configurations
+   - Performance baselines and metadata for each model
+
+3. **`performance_metrics`**: Aggregated statistics
+   - Daily/hourly/weekly metrics
+   - Success rates, average durations, percentile tracking
+
+#### 8.8.3 Log Document Structure
+
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "timestamp": "2026-01-14T10:30:45.123Z",
+  "api_version": "1.0.0",
+  
+  "input": {
+    "image_hash": "sha256:abc123...",
+    "image_size_bytes": 524288,
+    "image_dimensions": {"width": 1024, "height": 768},
+    "image_format": "JPEG",
+    "threshold_binary": 0.5
+  },
+  
+  "environment": {
+    "device": "cuda",
+    "hostname": "api-server-01",
+    "container_id": "docker-abc123",
+    "gpu_name": "NVIDIA GeForce RTX 3080",
+    "model_versions": {
+      "classifier": "best_efficientnet_binary.pt",
+      "ocr": "paddleocr-en",
+      "face_detector": "resnet50_2020-07-20"
+    }
+  },
+  
+  "binary_classifier": {
+    "duration_ms": 145.2,
+    "status": "success",
+    "predictions": {
+      "predicted_label": 1,
+      "probabilities": [0.15, 0.85],
+      "confidence": 0.85,
+      "passed": true
+    },
+    "performance": {
+      "preprocessing_ms": 12.3,
+      "inference_ms": 125.4,
+      "postprocessing_ms": 7.5,
+      "memory_allocated_mb": 1024.5
+    }
+  },
+  
+  "ocr_verification": {
+    "duration_ms": 782.1,
+    "status": "success",
+    "marker_validation": {
+      "found_markers": ["1", "2", "3", "4a", "4b", "4c", "4d", "5", "7", "8", "9"],
+      "missing_markers": [],
+      "is_valid_format": true
+    }
+  },
+  
+  "face_detection": {
+    "duration_ms": 234.5,
+    "status": "success",
+    "detection_results": {
+      "num_faces": 1,
+      "ok": true,
+      "reason": "single_face_ok"
+    }
+  },
+  
+  "response": {
+    "ok": true,
+    "decision_factors": {
+      "binary_passed": true,
+      "ocr_passed": true,
+      "face_passed": true
+    },
+    "http_status": 200
+  },
+  
+  "performance": {
+    "total_duration_ms": 1245.8,
+    "breakdown": {
+      "preprocessing_pct": 3.2,
+      "binary_classifier_pct": 11.7,
+      "ocr_verification_pct": 62.8,
+      "face_detection_pct": 18.8
+    }
+  },
+  
+  "client_info": {
+    "ip_address": "192.168.1.100",
+    "user_agent": "Mozilla/5.0..."
+  }
+}
+```
+
+#### 8.8.4 Setup Instructions
+
+1. **Install MongoDB** (see `MONGODB_SETUP_INSTRUCTIONS.md` for detailed guide):
+   ```powershell
+   # Windows: Download from mongodb.com and install as service
+   # Add to PATH: C:\Program Files\MongoDB\Server\7.0\bin
+   
+   # Verify installation
+   mongod --version
+   mongosh --version
+   ```
+
+2. **Initialize Database**:
+   ```powershell
+   # Navigate to project directory
+   cd C:\Users\rahma\OneDrive\Desktop\document_verification
+   
+   # Run initialization script (creates collections, indexes, views)
+   Get-Content mongodb-init.js | mongosh
+   ```
+
+3. **Install Python Dependencies**:
+   ```bash
+   pip install motor>=3.3.0 pymongo>=4.6.0
+   ```
+
+4. **Configure Connection** (optional - defaults work for local MongoDB):
+   ```bash
+   # Set environment variables
+   export MONGODB_URI="mongodb://localhost:27017/"
+   export MONGODB_DATABASE="document_verification"
+   export MONGODB_TIMEOUT_MS="5000"
+   ```
+
+5. **Start API Server**:
+   ```bash
+   uvicorn app:app --reload
+   ```
+
+#### 8.8.5 Querying Logs
+
+Connect to MongoDB and query inference logs:
+
+```javascript
+// Connect to database
+mongosh
+use document_verification
+
+// View recent requests
+db.inference_logs.find().sort({timestamp: -1}).limit(10).pretty()
+
+// Find failed verifications
+db.inference_logs.find({"response.ok": false}).pretty()
+
+// Performance analysis - slow requests
+db.inference_logs.find({
+  "performance.total_duration_ms": {$gt: 2000}
+}).sort({"performance.total_duration_ms": -1})
+
+// Search by image hash (detect duplicates)
+db.inference_logs.find({
+  "input.image_hash": "sha256:abc123..."
+})
+
+// Aggregate success rate by day
+db.inference_logs.aggregate([
+  {
+    $group: {
+      _id: {$dateToString: {format: "%Y-%m-%d", date: "$timestamp"}},
+      total: {$sum: 1},
+      successful: {$sum: {$cond: ["$response.ok", 1, 0]}},
+      avg_duration_ms: {$avg: "$performance.total_duration_ms"}
+    }
+  },
+  {$sort: {_id: -1}}
+])
+
+// Device performance comparison (CPU vs GPU)
+db.inference_logs.aggregate([
+  {
+    $group: {
+      _id: "$environment.device",
+      avg_total_ms: {$avg: "$performance.total_duration_ms"},
+      count: {$sum: 1}
+    }
+  }
+])
+```
+
+#### 8.8.6 Pre-Built Analytics Views
+
+The database includes three pre-configured views for common queries:
+
+1. **`recent_successful_verifications`**: Last 100 successful verifications
+2. **`failed_verifications`**: Recent failures with decision factors
+3. **`performance_stats`**: Aggregated performance by device type
+
+Access views like regular collections:
+```javascript
+db.recent_successful_verifications.find().pretty()
+db.failed_verifications.find().limit(20)
+db.performance_stats.find()
+```
+
+#### 8.8.7 Features
+
+- **Async Logging**: Non-blocking MongoDB writes using `motor` async driver
+- **Automatic Reconnection**: Graceful handling of connection failures
+- **Optional Dependency**: API continues to work if MongoDB is unavailable
+- **Schema Validation**: Enforces data structure at database level
+- **Index Optimization**: 14 indexes for fast queries on common patterns
+- **TTL Support**: Optional automatic cleanup of old logs (configurable)
+- **Detailed Metrics**: Per-stage timing breakdown and performance percentages
+
+#### 8.8.8 Production Considerations
+
+For production deployments:
+
+- **Enable Authentication**: Configure MongoDB with username/password
+  ```yaml
+  MONGODB_URI: mongodb://user:password@mongo:27017/
+  ```
+
+- **Set Up Backups**: Regular database dumps
+  ```bash
+  mongodump --db document_verification --out /backup/path
+  ```
+
+- **Configure TTL Index**: Automatically delete logs older than 90 days
+  ```javascript
+  db.inference_logs.createIndex(
+    {"timestamp": 1},
+    {expireAfterSeconds: 7776000}  // 90 days
+  )
+  ```
+
+- **Monitor Database Size**: Track growth and set up alerts
+  ```javascript
+  db.stats()  // Database statistics
+  db.inference_logs.stats()  // Collection size
+  ```
+
+- **Use Replica Sets**: High availability and automatic failover
+- **Enable Monitoring**: Use MongoDB Compass or Atlas for visualization
+
+For complete setup instructions, configuration options, and troubleshooting, see [`MONGODB_SETUP_INSTRUCTIONS.md`](MONGODB_SETUP_INSTRUCTIONS.md).
 
 ## 9. Integration Testing
 
