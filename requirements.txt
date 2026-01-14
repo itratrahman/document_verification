@@ -13,3 +13,5 @@ Pillow
 mlflow
 fastapi
 uvicorn[standard]
+motor
+pymongo
