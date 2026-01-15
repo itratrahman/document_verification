@@ -7,11 +7,13 @@ This guide provides step-by-step instructions to set up MongoDB for inference lo
 ## Table of Contents
 
 1. [Windows Installation](#1-windows-installation-local-development)
-2. [Docker Compose Setup](#2-docker-compose-setup-production)
-3. [Database Initialization](#3-database-initialization)
-4. [Testing the Setup](#4-testing-the-setup)
-5. [Querying Logs](#5-querying-logs)
-6. [Maintenance and Monitoring](#6-maintenance-and-monitoring)
+2. [Enable MongoDB Authentication](#2-enable-mongodb-authentication)
+3. [Configure Application Credentials](#3-configure-application-credentials)
+4. [Docker Compose Setup](#4-docker-compose-setup-production)
+5. [Database Initialization](#5-database-initialization)
+6. [Testing the Setup](#6-testing-the-setup)
+7. [Querying Logs](#7-querying-logs)
+8. [Maintenance and Monitoring](#8-maintenance-and-monitoring)
 
 ---
 
@@ -88,13 +90,455 @@ The MongoDB Shell is needed to interact with the database:
    mongosh --version
    ```
 
+### Step 1.6: Install MongoDB Shell (mongosh)
+
+The MongoDB Shell is needed to interact with the database:
+
+1. Download from: https://www.mongodb.com/try/download/shell
+2. Select:
+   - **Platform**: Windows 64-bit (MSI)
+   - **Package**: msi
+3. Install the MSI package
+4. Verify installation:
+   ```powershell
+   mongosh --version
+   ```
+
 ---
 
-## 2. Docker Compose Setup (Production)
+## 2. Enable MongoDB Authentication
 
-### Step 2.1: Create Docker Compose Configuration
+### Overview
+
+By default, MongoDB runs **without authentication** for ease of local development. For production and security best practices, you should enable authentication and create users with specific permissions.
+
+### Step 2.1: Enable Authentication on Existing MongoDB
+
+**IMPORTANT**: If you already have MongoDB running without authentication, follow these steps to enable it **without losing data**.
+
+#### Option A: Enable Authentication via Configuration File
+
+**1. Locate MongoDB configuration file:**
+```powershell
+# Default location:
+C:\Program Files\MongoDB\Server\7.0\bin\mongod.cfg
+```
+
+**2. Edit `mongod.cfg` with Administrator privileges:**
+```powershell
+# Open with Notepad as Admin
+notepad "C:\Program Files\MongoDB\Server\7.0\bin\mongod.cfg"
+```
+
+**3. Add security configuration:**
+```yaml
+# mongod.cfg
+
+# Storage settings (existing)
+storage:
+  dbPath: C:\Program Files\MongoDB\Server\7.0\data
+  journal:
+    enabled: true
+
+# Network settings (existing)
+net:
+  port: 27017
+  bindIp: 127.0.0.1
+
+# Security settings (ADD THIS SECTION)
+security:
+  authorization: enabled
+```
+
+**4. Save the file and restart MongoDB service:**
+```powershell
+# Stop MongoDB service
+Stop-Service MongoDB
+
+# Start MongoDB service
+Start-Service MongoDB
+
+# Verify it's running
+Get-Service MongoDB
+```
+
+#### Option B: Enable Authentication via Command Line
+
+**1. Stop MongoDB service:**
+```powershell
+Stop-Service MongoDB
+```
+
+**2. Start MongoDB with authentication enabled:**
+```powershell
+mongod --auth --dbpath "C:\Program Files\MongoDB\Server\7.0\data"
+```
+
+### Step 2.2: Create Admin User (First-Time Setup)
+
+**CRITICAL**: You must create an admin user **before** enabling authentication, or you'll lock yourself out!
+
+**If authentication is NOT yet enabled:**
+
+```powershell
+# Connect to MongoDB without authentication
+mongosh
+
+# In MongoDB shell:
+```
+
+```javascript
+// Switch to admin database
+use admin
+
+// Create root admin user
+db.createUser({
+  user: "admin",
+  pwd: "YourSecureAdminPassword123!",  // CHANGE THIS!
+  roles: [
+    { role: "root", db: "admin" },
+    { role: "userAdminAnyDatabase", db: "admin" },
+    { role: "dbAdminAnyDatabase", db: "admin" },
+    { role: "readWriteAnyDatabase", db: "admin" }
+  ]
+})
+
+// Verify user was created
+db.getUsers()
+
+// Exit
+exit
+```
+
+**Output should show:**
+```
+Successfully added user: {
+  user: "admin",
+  roles: [ ... ]
+}
+```
+
+### Step 2.3: Create Application User
+
+Now create a dedicated user for the Document Verification API:
+
+```powershell
+# Connect with admin credentials
+mongosh -u admin -p YourSecureAdminPassword123! --authenticationDatabase admin
+```
+
+```javascript
+// Switch to application database
+use document_verification
+
+// Create application user with limited permissions
+db.createUser({
+  user: "doc_verify_user",
+  pwd: "AppUserSecurePassword456!",  // CHANGE THIS!
+  roles: [
+    { role: "readWrite", db: "document_verification" },
+    { role: "dbAdmin", db: "document_verification" }
+  ]
+})
+
+// Verify user was created
+db.getUsers()
+
+// Test authentication
+db.auth("doc_verify_user", "AppUserSecurePassword456!")
+// Should return: { ok: 1 }
+
+// Exit
+exit
+```
+
+### Step 2.4: Test Authentication
+
+```powershell
+# Test admin user
+mongosh -u admin -p YourSecureAdminPassword123! --authenticationDatabase admin
+
+# Test application user
+mongosh -u doc_verify_user -p AppUserSecurePassword456! --authenticationDatabase document_verification
+
+# If successful, you'll see:
+# Current Mongosh Log ID: ...
+# Connecting to: mongodb://127.0.0.1:27017/?directConnection=true
+# Using MongoDB: 7.0.x
+```
+
+### Step 2.5: Troubleshooting Authentication
+
+**Issue: "Authentication failed"**
+
+**Solution:**
+```javascript
+// Connect as admin
+mongosh -u admin -p YourSecureAdminPassword123! --authenticationDatabase admin
+
+// Check existing users
+use admin
+db.getUsers()
+
+use document_verification
+db.getUsers()
+
+// Update user password if needed
+db.updateUser("doc_verify_user", {
+  pwd: "NewPassword123!"
+})
+
+// Grant additional roles if needed
+db.grantRolesToUser("doc_verify_user", [
+  { role: "readWrite", db: "document_verification" }
+])
+```
+
+**Issue: "Locked out - can't connect as admin"**
+
+**Solution - Reset by temporarily disabling auth:**
+```powershell
+# 1. Stop MongoDB service
+Stop-Service MongoDB
+
+# 2. Edit mongod.cfg and comment out security section:
+# security:
+#   authorization: enabled
+
+# 3. Start MongoDB service
+Start-Service MongoDB
+
+# 4. Create admin user (see Step 2.2)
+
+# 5. Re-enable authentication in mongod.cfg
+
+# 6. Restart service
+Restart-Service MongoDB
+```
+
+---
+
+## 3. Configure Application Credentials
+
+### Step 3.1: Create Credentials File
+
+The application reads MongoDB credentials from `cred/mongodb_credentials.json`.
+
+**1. Navigate to project directory:**
+```powershell
+cd C:\Users\rahma\OneDrive\Desktop\document_verification
+```
+
+**2. Create credentials file from template:**
+```powershell
+# Copy example file
+Copy-Item cred\mongodb_credentials.json.example cred\mongodb_credentials.json
+```
+
+**3. Edit `cred/mongodb_credentials.json` with your credentials:**
+```json
+{
+  "username": "doc_verify_user",
+  "password": "AppUserSecurePassword456!",
+  "host": "localhost",
+  "port": "27017",
+  "database": "document_verification"
+}
+```
+
+**Security Notes:**
+- ✓ This file is git-ignored (check `.gitignore`)
+- ✓ Use strong passwords (16+ characters, mixed case, numbers, symbols)
+- ✓ Never commit this file to version control
+- ✓ Restrict file permissions (Windows: right-click → Properties → Security → Advanced)
+
+### Step 3.2: Secure Credentials File (Windows)
+
+```powershell
+# Restrict access to current user only
+$path = "cred\mongodb_credentials.json"
+$acl = Get-Acl $path
+
+# Remove inheritance
+$acl.SetAccessRuleProtection($true, $false)
+
+# Remove all existing rules
+$acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) }
+
+# Grant current user full control
+$rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $env:USERNAME,
+    "FullControl",
+    "Allow"
+)
+$acl.AddAccessRule($rule)
+
+# Apply changes
+Set-Acl $path $acl
+
+# Verify
+Get-Acl $path | Format-List
+```
+
+### Step 3.3: Test Credentials
+
+```powershell
+# Test connection with credentials from file
+python -c "
+import json
+from motor.motor_asyncio import AsyncIOMotorClient
+import asyncio
+
+with open('cred/mongodb_credentials.json') as f:
+    creds = json.load(f)
+
+uri = f\"mongodb://{creds['username']}:{creds['password']}@{creds['host']}:{creds['port']}/\"
+
+async def test():
+    client = AsyncIOMotorClient(uri)
+    await client.admin.command('ping')
+    print('✓ MongoDB connection successful!')
+    client.close()
+
+asyncio.run(test())
+"
+```
+
+**Expected output:**
+```
+✓ MongoDB connection successful!
+```
+
+---
+
+## 4. Docker Compose Setup (Production)
+
+### Step 4.1: Create Docker Compose Configuration
 
 Create or update `docker-compose.yml` in your project root:
+
+```yaml
+version: '3.8'
+
+services:
+  # FastAPI Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - ./checkpoints:/app/checkpoints:ro
+      - ./models:/app/models:ro
+      - ./data:/app/data:ro
+      - ./cred:/app/cred:ro  # Mount credentials folder
+    networks:
+      - app_network
+
+  # MongoDB Service
+  mongo:
+    image: mongo:7.0
+    container_name: document-verification-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      # Enable authentication
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ADMIN_PASSWORD:-SecureAdminPass123}
+      MONGO_INITDB_DATABASE: document_verification
+    volumes:
+      # Persistent data storage
+      - mongodb_data:/data/db
+      - mongodb_logs:/var/log/mongodb
+      # Initialization script (creates app user)
+      - ./mongodb-init-docker.js:/docker-entrypoint-initdb.d/mongodb-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app_network
+
+  # Optional: MongoDB Web UI (mongo-express)
+  mongo-express:
+    image: mongo-express:latest
+    container_name: document-verification-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://admin:${MONGO_ADMIN_PASSWORD:-SecureAdminPass123}@mongo:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
+    depends_on:
+      - mongo
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_logs:
+    driver: local
+```
+
+### Step 4.2: Create Docker MongoDB Initialization Script
+
+Create `mongodb-init-docker.js` for Docker environment:
+
+```javascript
+// mongodb-init-docker.js
+// This script creates the application user in Docker MongoDB
+
+// Connect to admin database (root user created automatically)
+db = db.getSiblingDB('admin');
+
+// Create application user with readWrite permissions
+db = db.getSiblingDB('document_verification');
+
+db.createUser({
+  user: 'doc_verify_user',
+  pwd: 'DockerAppPassword789!',  // Change this in production!
+  roles: [
+    { role: 'readWrite', db: 'document_verification' },
+    { role: 'dbAdmin', db: 'document_verification' }
+  ]
+});
+
+print('✓ Application user created successfully');
+
+// Create collections and indexes (your existing mongodb-init.js content)
+// ... rest of initialization script ...
+```
+
+### Step 4.3: Create Docker Credentials File
+
+Create `cred/mongodb_credentials.docker.json`:
+
+```json
+{
+  "username": "doc_verify_user",
+  "password": "DockerAppPassword789!",
+  "host": "mongo",
+  "port": "27017",
+  "database": "document_verification"
+}
+```
+
+### Step 4.4: Update Dockerfile
+
+Ensure your `Dockerfile` copies credentials:
 
 ```yaml
 version: '3.8'

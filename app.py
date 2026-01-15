@@ -29,11 +29,13 @@ import io  # In-memory byte buffers used to decode base64 images
 import base64  # Base64 decoding for image transport over JSON
 import logging  # Structured logging via Uvicorn's logger
 import hashlib  # SHA256 hashing for image deduplication
+from pathlib import Path
 import uuid  # Unique request ID generation
 import time  # Performance timing
 import socket  # Hostname detection
 from datetime import datetime  # Timestamp generation
 from typing import Any, Dict, Optional, Tuple  # Type hints for clearer API contracts
+import json  # JSON parsing for credential files
 
 # Third-party web framework imports --------------------------------------------
 
@@ -105,6 +107,53 @@ class VerifyResponse(BaseModel):
     binary: Dict[str, Any]  # Classifier outputs (probabilities, predicted label, etc.)
     ocr: Dict[str, Any]  # OCR outputs (raw text, found markers, etc.)
     face: Dict[str, Any]  # Face-detection outputs (number of faces, boxes, etc.)
+
+
+# ------------------------------------------------------------------------------
+# Helper: load MongoDB credentials from file
+# ------------------------------------------------------------------------------
+
+def load_mongodb_credentials() -> Optional[Dict[str, str]]:
+    """
+    Load MongoDB credentials from cred/mongodb_credentials.json file.
+    
+    Expected file format:
+    {
+        "username": "your_username",
+        "password": "your_password",
+        "host": "localhost",  // optional, defaults to localhost
+        "port": "27017",       // optional, defaults to 27017
+        "database": "document_verification"  // optional
+    }
+    
+    Returns:
+        Dict with credentials if file exists and is valid, None otherwise.
+    """
+    cred_file = Path("cred/mongodb_credentials.json")
+    
+    if not cred_file.exists():
+        logger.warning(f"MongoDB credentials file not found: {cred_file}")
+        logger.info("Attempting to connect without authentication...")
+        return None
+    
+    try:
+        with open(cred_file, 'r') as f:
+            creds = json.load(f)
+        
+        # Validate required fields
+        if "username" not in creds or "password" not in creds:
+            logger.error("MongoDB credentials file missing 'username' or 'password' fields")
+            return None
+        
+        logger.info(f"MongoDB credentials loaded from {cred_file}")
+        return creds
+    
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse MongoDB credentials file: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error reading MongoDB credentials: {e}")
+        return None
 
 
 # ------------------------------------------------------------------------------
@@ -216,24 +265,51 @@ def load_models():
         raise  # Re-raise so FastAPI/Uvicorn fails fast and shows the stack trace
 
     # ----------------------------
-    # MongoDB connection (optional)
+    # MongoDB connection (optional, with credential-based authentication)
     # ----------------------------
     if MONGODB_AVAILABLE:
         try:
-            # Read MongoDB connection details from environment variables
-            mongodb_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
-            mongodb_db = os.getenv("MONGODB_DATABASE", "document_verification")
+            # Load credentials from file
+            creds = load_mongodb_credentials()
+            
+            if creds:
+                # Build authenticated connection URI
+                username = creds.get("username")
+                password = creds.get("password")
+                host = creds.get("host", "localhost")
+                port = creds.get("port", "27017")
+                database = creds.get("database", os.getenv("MONGODB_DATABASE", "document_verification"))
+                
+                # URL-encode username and password to handle special characters
+                from urllib.parse import quote_plus
+                username_encoded = quote_plus(username)
+                password_encoded = quote_plus(password)
+                
+                # Construct authenticated MongoDB URI
+                mongodb_uri = f"mongodb://{username_encoded}:{password_encoded}@{host}:{port}/"
+                mongodb_db = database
+                
+                logger.info(f"Connecting to MongoDB with authentication: {username}@{host}:{port}")
+            else:
+                # Fallback to environment variables or default (no authentication)
+                mongodb_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+                mongodb_db = os.getenv("MONGODB_DATABASE", "document_verification")
+                logger.info("Connecting to MongoDB without authentication")
             
             # Create async MongoDB client
-            app.state.mongo_client = AsyncIOMotorClient(mongodb_uri)
+            app.state.mongo_client = AsyncIOMotorClient(
+                mongodb_uri,
+                serverSelectionTimeoutMS=5000  # 5 second timeout
+            )
             app.state.mongo_db = app.state.mongo_client[mongodb_db]
             app.state.mongo_collection = app.state.mongo_db["inference_logs"]
             
             # Test connection with a simple ping
             app.state.mongo_client.admin.command('ping')
-            logger.info(f"MongoDB connected: {mongodb_db}")
+            logger.info(f"✓ MongoDB connected successfully: {mongodb_db}")
         except Exception as e:
             logger.warning(f"MongoDB connection failed: {e}")
+            logger.warning("API will continue without MongoDB logging")
             app.state.mongo_client = None
             app.state.mongo_db = None
             app.state.mongo_collection = None
@@ -249,6 +325,40 @@ def load_models():
         app.state.gpu_name = torch.cuda.get_device_name(0)
     else:
         app.state.gpu_name = None
+
+    # ----------------------------
+    # Cold start warmup: run dummy predictions on all models
+    # ----------------------------
+    logger.info("Running warmup predictions to break cold start...")
+    
+    try:
+        # Create a dummy RGB image (224x224, random noise)
+        import numpy as np
+        dummy_image_array = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        dummy_image_pil = Image.fromarray(dummy_image_array, mode='RGB')
+        
+        # 1. Warmup binary classifier (EfficientNet)
+        with torch.no_grad():
+            dummy_tensor = app.state.transform(dummy_image_pil).unsqueeze(0).to(device)
+            _ = app.state.classifier(dummy_tensor)
+        logger.info("✓ Binary classifier warmed up")
+        
+        # 2. Warmup PaddleOCR
+        # PaddleOCR expects BGR numpy array
+        dummy_image_bgr = dummy_image_array[:, :, ::-1].copy()  # RGB to BGR
+        _ = app.state.ocr.ocr(dummy_image_bgr)
+        logger.info("✓ PaddleOCR warmed up")
+        
+        # 3. Warmup RetinaFace
+        # RetinaFace.detect_faces expects BGR numpy array
+        _ = app.state.retinaface.detect_faces(dummy_image_bgr)
+        logger.info("✓ RetinaFace warmed up")
+        
+        logger.info("All models warmed up successfully - cold start eliminated")
+    except Exception:
+        # If warmup fails, the API should not start
+        logger.exception("Failed to warmup models")
+        raise  # Re-raise so FastAPI/Uvicorn fails fast and shows the stack trace
 
 
 # ------------------------------------------------------------------------------

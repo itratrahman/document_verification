@@ -121,6 +121,10 @@ Desktop.ini
 .env
 .env.*
 
+# MongoDB credentials (SECURITY: Never commit!)
+cred/mongodb_credentials.json
+cred/*.json
+
 # json files with sensitive information
 *.json
 

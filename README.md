@@ -301,7 +301,16 @@ python model.py
 # Models: models/best_efficientnet_binary.pt
 ```
 
-**5. Start API Server**
+**5. Configure MongoDB Credentials** (for inference logging)
+```bash
+# Copy example credentials file
+cp cred/mongodb_credentials.json.example cred/mongodb_credentials.json
+
+# Edit with your MongoDB username and password
+# See "MongoDB Setup" section below for creating users
+```
+
+**6. Start API Server**
 ```bash
 uvicorn app:app --host 0.0.0.0 --port 8000
 # Access: http://localhost:8000/docs
@@ -349,15 +358,60 @@ For inference logging and analytics:
 mongod --version
 ```
 
-**2. Initialize Database**
+**2. Create MongoDB User with Authentication**
+```javascript
+// Connect to MongoDB shell
+mongosh
+
+// Switch to admin database
+use admin
+
+// Create admin user (do this first!)
+db.createUser({
+  user: "admin",
+  pwd: "your_secure_password",  // Change this!
+  roles: ["root"]
+})
+
+// Exit and reconnect with authentication
+exit
+mongosh -u admin -p your_secure_password --authenticationDatabase admin
+
+// Create application-specific user
+use document_verification
+db.createUser({
+  user: "doc_verify_user",
+  pwd: "another_secure_password",  // Change this!
+  roles: [
+    { role: "readWrite", db: "document_verification" }
+  ]
+})
+```
+
+**3. Configure Credentials File**
+```bash
+# Create credentials file from example
+cp cred/mongodb_credentials.json.example cred/mongodb_credentials.json
+
+# Edit cred/mongodb_credentials.json:
+{
+  "username": "doc_verify_user",
+  "password": "another_secure_password",
+  "host": "localhost",
+  "port": "27017",
+  "database": "document_verification"
+}
+```
+
+**4. Initialize Database**
 ```powershell
-Get-Content mongodb-init.js | mongosh
+Get-Content mongodb-init.js | mongosh -u doc_verify_user -p another_secure_password
 # Creates: inference_logs, model_registry, performance_metrics
 ```
 
-**3. Query Logs**
+**5. Query Logs**
 ```javascript
-mongosh
+mongosh -u doc_verify_user -p another_secure_password
 use document_verification
 db.inference_logs.find().sort({timestamp: -1}).limit(10)
 ```
