@@ -17,7 +17,7 @@
 
 - **🎯 Multi-Modal AI Pipeline**: Deep learning → OCR → Face detection for robust verification
 - **🏢 Production-Ready**: FastAPI + Docker + MongoDB + Pytest with comprehensive logging
-- **⚡ High Performance**: 95% validation accuracy, <2s per image, GPU/CPU auto-detection
+- **⚡ High Performance**: 95% end to end validation accuracy, <2s per image, GPU/CPU auto-detection
 - **🔬 Full MLOps**: Experiment tracking, reproducible training, automated checkpointing
 - **🛡️ Secure & Scalable**: Thread-safe async inference, 8MB size limits, health checks
 - **📈 Well-Tested**: 3,866-image dataset, pytest integration suite, balanced class weighting
@@ -174,7 +174,7 @@ flowchart TD
 
 | Metric | Value |
 |--------|-------|
-| **Validation Accuracy** | 85-95% |
+| **Validation Accuracy** | 95% |
 | **Training Dataset** | 3,866 images |
 | **Inference Time** | <2 seconds/image |
 | **Model Size** | ~21 MB (EfficientNet-B0) |
