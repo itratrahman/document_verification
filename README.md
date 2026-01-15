@@ -9,7 +9,7 @@
 
 > Production-ready AI document verification system combining EfficientNet-B0, PaddleOCR, and RetinaFace for multi-stage EU Driving License authentication
 
-**🚀 95% validation accuracy** • **🐳 Docker-ready** • **📊 MongoDB logging** • **🔒 3-stage verification** • **⚡ <2s inference**
+**🚀 95% end to end validation accuracy** • **🐳 Docker-ready** • **📊 MongoDB logging** • **🔒 3-stage verification** • **⚡ <2s inference**
 
 ---
 
