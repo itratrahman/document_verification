@@ -174,7 +174,7 @@ flowchart TD
 
 | Metric | Value |
 |--------|-------|
-| **Validation F1** | 95% |
+| **Validation F1** | 97% |
 | **Training Dataset** | 3,866 images |
 | **Inference Time** | <2 seconds/image |
 | **Model Size** | ~21 MB (EfficientNet-B0) |
@@ -801,7 +801,7 @@ ls models/best_efficientnet_binary.pt
 
 ✅ **Full-Stack ML Engineering**: End-to-end pipeline from training to production deployment  
 ✅ **Battle-Tested Architecture**: FastAPI + Docker + MongoDB + Pytest with comprehensive logging  
-✅ **High Performance**: 95% accuracy, <2s inference, GPU/CPU auto-detection  
+✅ **High Performance**: 95% end to end accuracy, <2s inference, GPU/CPU auto-detection  
 ✅ **Production-Grade Code**: Thread-safe async inference, health checks, error handling  
 ✅ **Well-Documented**: 875+ lines of comments in API, detailed README, setup guides  
 ✅ **MLOps Best Practices**: Experiment tracking, reproducible training, automated checkpointing  
