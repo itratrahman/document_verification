@@ -174,7 +174,7 @@ flowchart TD
 
 | Metric | Value |
 |--------|-------|
-| **Validation F!** | 95% |
+| **Validation F1** | 95% |
 | **Training Dataset** | 3,866 images |
 | **Inference Time** | <2 seconds/image |
 | **Model Size** | ~21 MB (EfficientNet-B0) |
