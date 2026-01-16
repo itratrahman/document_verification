@@ -1,17 +1,21 @@
 """
 app.py — FastAPI AI inference server (document verification)
 
-This service exposes a single POST endpoint: /verify
+This service exposes two main POST endpoints:
 
-Given an input image (base64-encoded), the server runs three independent checks:
+1. /verify - Document verification endpoint
+   Given an input image (base64-encoded), the server runs three independent checks:
+   - Binary image classifier (e.g., EfficientNet-B0) to decide whether the image looks like
+     the expected document type.
+   - OCR (PaddleOCR) to extract text and verify presence of required "marker" fields
+     (e.g., "1", "2", "3", "4a", ...).
+   - Face detection (RetinaFace) to ensure a single reasonably-sized face is present.
+   
+   The result combines these checks into a single boolean `ok`.
 
-1) Binary image classifier (e.g., EfficientNet-B0) to decide whether the image looks like
-   the expected document type.
-2) OCR (PaddleOCR) to extract text and verify presence of required "marker" fields
-   (e.g., "1", "2", "3", "4a", ...).
-3) Face detection (RetinaFace) to ensure a single reasonably-sized face is present.
-
-The result combines these checks into a single boolean `ok`.
+2. /reload-model - Hot-reload the PyTorch classifier during runtime
+   Allows updating model weights without restarting the API server. Supports both
+   default checkpoint paths and custom model paths.
 
 Notes for readers:
 - Heavy ML dependencies (PaddleOCR / RetinaFace) are imported lazily at startup so the
@@ -107,6 +111,30 @@ class VerifyResponse(BaseModel):
     binary: Dict[str, Any]  # Classifier outputs (probabilities, predicted label, etc.)
     ocr: Dict[str, Any]  # OCR outputs (raw text, found markers, etc.)
     face: Dict[str, Any]  # Face-detection outputs (number of faces, boxes, etc.)
+
+
+class ReloadModelRequest(BaseModel):
+    """
+    Request schema for /reload-model.
+
+    - model_path: optional custom path to model checkpoint (if not provided, uses default paths)
+    """
+    model_path: Optional[str] = None  # Optional custom model path
+
+
+class ReloadModelResponse(BaseModel):
+    """
+    Response schema returned by /reload-model.
+
+    - success: whether the reload was successful
+    - message: description of what happened
+    - model_path: path to the model that was loaded
+    - timestamp: when the reload occurred
+    """
+    success: bool  # Whether reload succeeded
+    message: str  # Status message
+    model_path: Optional[str]  # Path to loaded model
+    timestamp: str  # ISO format timestamp
 
 
 # ------------------------------------------------------------------------------
@@ -972,6 +1000,139 @@ async def verify(req: VerifyRequest, request: Request):
 
     # Return a typed response that matches VerifyResponse schema.
     return VerifyResponse(ok=ok, binary=binary, ocr=ocr, face=face)
+
+
+# ------------------------------------------------------------------------------
+# API endpoint: /reload-model
+# ------------------------------------------------------------------------------
+
+@app.post("/reload-model", response_model=ReloadModelResponse)
+async def reload_model(req: ReloadModelRequest = None):
+    """
+    Reload the PyTorch binary classifier model from disk during runtime.
+    
+    This endpoint allows hot-swapping model weights without restarting the API server.
+    Useful for deploying updated models or switching between different checkpoints.
+    
+    Request body (optional):
+    - model_path: Custom path to model checkpoint (if not provided, uses default paths)
+    
+    Returns:
+    - success: Whether the reload was successful
+    - message: Description of what happened
+    - model_path: Path to the model that was loaded
+    - timestamp: ISO format timestamp
+    
+    Example usage:
+        POST /reload-model
+        {
+            "model_path": "models/new_model.pt"
+        }
+    """
+    reload_timestamp = datetime.utcnow().isoformat() + "Z"
+    
+    try:
+        # Run the blocking model reload in a threadpool to keep event loop responsive
+        result = await run_in_threadpool(_reload_classifier_model, req.model_path if req else None)
+        
+        if result["success"]:
+            logger.info(f"Model reloaded successfully from {result['model_path']}")
+            return ReloadModelResponse(
+                success=True,
+                message=result["message"],
+                model_path=result["model_path"],
+                timestamp=reload_timestamp
+            )
+        else:
+            logger.error(f"Model reload failed: {result['message']}")
+            raise HTTPException(status_code=500, detail=result["message"])
+            
+    except Exception as e:
+        error_msg = f"Model reload failed with exception: {str(e)}"
+        logger.exception(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+def _reload_classifier_model(custom_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Internal function to reload the classifier model (runs in threadpool).
+    
+    Args:
+        custom_path: Optional custom path to model checkpoint
+        
+    Returns:
+        Dict with success status, message, and loaded model path
+    """
+    try:
+        device = app.state.device
+        
+        # Build the model architecture (must match checkpoint weights)
+        model = create_model(num_classes=2)
+        
+        # Determine which checkpoint to load
+        if custom_path:
+            # Use custom path if provided
+            if not os.path.exists(custom_path):
+                return {
+                    "success": False,
+                    "message": f"Custom model path does not exist: {custom_path}",
+                    "model_path": None
+                }
+            ckpt_paths = [custom_path]
+        else:
+            # Use default checkpoint locations
+            ckpt_paths = [
+                os.path.join("models", "best_efficientnet_binary.pt"),
+                os.path.join("models", "final_efficientnet_binary.pt"),
+            ]
+        
+        # Attempt to load weights from disk
+        loaded_path = None
+        for p in ckpt_paths:
+            if os.path.exists(p):
+                state = torch.load(p, map_location=device)
+                model.load_state_dict(state)
+                loaded_path = p
+                logger.info(f"Loaded classifier weights from {p}")
+                break
+        
+        if loaded_path is None:
+            return {
+                "success": False,
+                "message": f"No model checkpoint found in paths: {ckpt_paths}",
+                "model_path": None
+            }
+        
+        # Put model in inference mode
+        model.eval()
+        
+        # Move model to device
+        model.to(device)
+        
+        # Replace the existing model in app.state (atomic operation)
+        app.state.classifier = model
+        
+        # Run a quick warmup prediction to verify model works
+        import numpy as np
+        dummy_image_array = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+        dummy_image_pil = Image.fromarray(dummy_image_array, mode='RGB')
+        
+        with torch.no_grad():
+            dummy_tensor = app.state.transform(dummy_image_pil).unsqueeze(0).to(device)
+            _ = app.state.classifier(dummy_tensor)
+        
+        return {
+            "success": True,
+            "message": f"Model reloaded successfully from {loaded_path}",
+            "model_path": loaded_path
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Failed to reload model: {str(e)}",
+            "model_path": None
+        }
 
 
 # ------------------------------------------------------------------------------

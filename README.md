@@ -209,7 +209,7 @@ flowchart TD
 
 ### Endpoints
 
-**POST `/verify`** - Verify document authenticity
+#### **POST `/verify`** - Verify document authenticity
 
 **Request:**
 ```json
@@ -253,6 +253,47 @@ flowchart TD
   "ocr": {"is_valid_format": false, "missing_markers": ["4a", "9"]},
   "face": {"ok": false, "reason": "multiple_faces", "num_faces": 2}
 }
+```
+
+#### **POST `/reload-model`** - Hot-reload PyTorch model during runtime
+
+Allows updating the binary classifier model weights without restarting the API server. Useful for deploying updated models or switching between different checkpoints.
+
+**Request:**
+```json
+{
+  "model_path": "models/new_model.pt"  // Optional: custom model path
+}
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Model reloaded successfully from models/best_efficientnet_binary.pt",
+  "model_path": "models/best_efficientnet_binary.pt",
+  "timestamp": "2026-01-15T10:30:45.123456Z"
+}
+```
+
+**Response (Failure):**
+```json
+{
+  "detail": "Custom model path does not exist: models/nonexistent.pt"
+}
+```
+
+**Usage Examples:**
+```bash
+# Reload with default model paths
+curl -X POST http://localhost:8000/reload-model \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Reload with custom model path
+curl -X POST http://localhost:8000/reload-model \
+  -H "Content-Type: application/json" \
+  -d '{"model_path": "models/best_efficientnet_binary.pt"}'
 ```
 
 **Interactive Docs:**
