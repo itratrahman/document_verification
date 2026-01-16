@@ -644,6 +644,32 @@ mlflow ui --backend-store-uri ./mlruns
 # Access: http://localhost:5000
 ```
 
+### Model Versioning
+
+**Automated Versioning Strategy:**
+- Models are saved with timestamp-based versions: `efficientnet_binary_v{YYYYMMDD_HHMMSS}_f1_{score}.pt`
+- Each model includes metadata JSON with validation metrics (F1, accuracy, precision, recall, etc.)
+- Primary selection metric: **Validation F1 score** (better for imbalanced datasets than accuracy)
+
+**Files Generated:**
+```
+models/
+├── efficientnet_binary_v20260115_143052_f1_0.9534.pt     # Versioned checkpoint
+├── efficientnet_binary_v20260115_143052_metadata.json    # Performance metrics
+├── best_efficientnet_binary.pt                            # Symlink to best (legacy)
+└── final_efficientnet_binary.pt                           # Final epoch (legacy)
+```
+
+**Model Selection at Inference:**
+- API automatically loads the model with highest validation F1 score from metadata files
+- Falls back to legacy checkpoints if no metadata found
+- Manual model reload via `/reload-model` endpoint supported
+
+**MLflow Integration:**
+- All metrics logged to MLflow with model version tags
+- Best F1 score tracked across epochs
+- Model artifacts stored for reproducibility
+
 ### Inference & API Details
 
 **FastAPI Server Features:**

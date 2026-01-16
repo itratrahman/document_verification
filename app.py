@@ -185,6 +185,83 @@ def load_mongodb_credentials() -> Optional[Dict[str, str]]:
 
 
 # ------------------------------------------------------------------------------
+# Helper: Find best model by F1 score from metadata files
+# ------------------------------------------------------------------------------
+
+def _load_best_model_by_f1(models_dir: str) -> Optional[str]:
+    """
+    Find and return the path to the best performing model based on validation F1 score.
+    
+    This function scans the models directory for metadata JSON files, parses them,
+    and identifies the model with the highest validation F1 score.
+    
+    Args:
+        models_dir: Directory containing model checkpoints and metadata files
+        
+    Returns:
+        Path to the best model file, or None if no valid metadata found
+    """
+    try:
+        models_path = Path(models_dir)
+        if not models_path.exists():
+            logger.warning(f"Models directory does not exist: {models_dir}")
+            return None
+        
+        # Find all metadata JSON files
+        metadata_files = list(models_path.glob("*_metadata.json"))
+        
+        if not metadata_files:
+            logger.warning(f"No model metadata files found in {models_dir}")
+            return None
+        
+        logger.info(f"Found {len(metadata_files)} model metadata files")
+        
+        best_f1 = -1.0
+        best_model_path = None
+        best_metadata = None
+        
+        # Iterate through all metadata files to find the best F1 score
+        for metadata_file in metadata_files:
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                
+                # Extract F1 score from metadata
+                f1_score = metadata.get("metrics", {}).get("val_f1", -1.0)
+                model_file = metadata.get("model_file", None)
+                
+                if model_file and f1_score > best_f1:
+                    # Construct full path to model file
+                    model_path = models_path / model_file
+                    
+                    # Verify model file exists
+                    if model_path.exists():
+                        best_f1 = f1_score
+                        best_model_path = str(model_path)
+                        best_metadata = metadata
+                        logger.info(f"Found model with F1={f1_score:.4f}: {model_file}")
+                    else:
+                        logger.warning(f"Model file referenced in metadata not found: {model_path}")
+                        
+            except (json.JSONDecodeError, KeyError, IOError) as e:
+                logger.warning(f"Failed to parse metadata file {metadata_file}: {e}")
+                continue
+        
+        if best_model_path:
+            logger.info(f"Selected best model with F1={best_f1:.4f}: {best_model_path}")
+            logger.info(f"Model version: {best_metadata.get('version', 'unknown')}")
+            logger.info(f"Model metrics: {best_metadata.get('metrics', {})}")
+            return best_model_path
+        else:
+            logger.warning("No valid model found with metadata")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error while loading best model by F1 score: {e}")
+        return None
+
+
+# ------------------------------------------------------------------------------
 # Startup hook: load models once and store them on app.state
 # ------------------------------------------------------------------------------
 
@@ -211,19 +288,33 @@ def load_models():
         # Build the model architecture (must match the checkpoint weights).
         model = create_model(num_classes=2)
 
-        # Potential checkpoint locations (first existing file is used).
-        ckpt_paths = [
-            os.path.join("models", "best_efficientnet_binary.pt"),
-            os.path.join("models", "final_efficientnet_binary.pt"),
-        ]
-
-        # Attempt to load weights from disk if any known checkpoint exists.
-        for p in ckpt_paths:
-            if os.path.exists(p):  # Checkpoint exists on filesystem?
-                state = torch.load(p, map_location=device)  # Load to CPU/GPU safely
-                model.load_state_dict(state)  # Restore model weights
-                logger.info(f"Loaded classifier weights from {p}")  # Confirm load
-                break  # Stop after first successful load
+        # Load the best model based on validation F1 score from metadata files
+        model_path = _load_best_model_by_f1("models")
+        
+        if model_path and os.path.exists(model_path):
+            # Load the best performing model
+            state = torch.load(model_path, map_location=device)  # Load to CPU/GPU safely
+            model.load_state_dict(state)  # Restore model weights
+            logger.info(f"Loaded best classifier (by F1 score) from {model_path}")  # Confirm load
+        else:
+            # Fallback: try legacy checkpoint locations if no metadata found
+            logger.warning("No model metadata found, falling back to legacy checkpoint loading")
+            ckpt_paths = [
+                os.path.join("models", "best_efficientnet_binary.pt"),
+                os.path.join("models", "final_efficientnet_binary.pt"),
+            ]
+            
+            loaded = False
+            for p in ckpt_paths:
+                if os.path.exists(p):  # Checkpoint exists on filesystem?
+                    state = torch.load(p, map_location=device)  # Load to CPU/GPU safely
+                    model.load_state_dict(state)  # Restore model weights
+                    logger.info(f"Loaded classifier weights from {p}")  # Confirm load
+                    loaded = True
+                    break  # Stop after first successful load
+            
+            if not loaded:
+                raise FileNotFoundError("No model checkpoint found in models directory")
 
         # Put model in inference mode (disables dropout, uses running stats for BN, etc.).
         model.eval()
@@ -1057,6 +1148,9 @@ def _reload_classifier_model(custom_path: Optional[str] = None) -> Dict[str, Any
     """
     Internal function to reload the classifier model (runs in threadpool).
     
+    If custom_path is provided, loads that specific model.
+    Otherwise, loads the best model based on validation F1 score.
+    
     Args:
         custom_path: Optional custom path to model checkpoint
         
@@ -1064,6 +1158,28 @@ def _reload_classifier_model(custom_path: Optional[str] = None) -> Dict[str, Any
         Dict with success status, message, and loaded model path
     """
     try:
+        # Determine which model to load
+        if custom_path:
+            model_path = custom_path
+            logger.info(f"Reloading custom model from: {model_path}")
+        else:
+            # Load best model by F1 score
+            model_path = _load_best_model_by_f1("models")
+            if not model_path:
+                # Fallback to default paths
+                logger.warning("Could not find best model by F1, trying default paths")
+                for p in ["models/best_efficientnet_binary.pt", "models/final_efficientnet_binary.pt"]:
+                    if os.path.exists(p):
+                        model_path = p
+                        break
+        
+        if not model_path or not os.path.exists(model_path):
+            return {
+                "success": False,
+                "message": f"Model file not found: {model_path}",
+                "model_path": None,
+                "timestamp": datetime.utcnow().isoformat()
+            }
         device = app.state.device
         
         # Build the model architecture (must match checkpoint weights)

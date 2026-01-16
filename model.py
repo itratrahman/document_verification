@@ -35,6 +35,9 @@ import copy  # used for deep copying model state_dict
 # Import datetime to get human-readable date and time for log filenames
 from datetime import datetime  # used to format current date/time for log filenames
 
+# Import json for saving model metadata
+import json  # used for saving model metadata to JSON files
+
 # Import mlflow for experiment tracking
 import mlflow  # used to log parameters, metrics, and artifacts
 import mlflow.pytorch  # used to log PyTorch models as MLflow artifacts
@@ -406,15 +409,22 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
 
     # Initialize the best validation accuracy observed so far
     best_acc = 0.0  # best validation accuracy found so far
+    
+    # Initialize the best validation F1 score observed so far (primary metric for model selection)
+    best_f1 = 0.0  # best validation F1 score found so far
 
     # Make a deep copy of the initial model weights as a baseline
     best_model_wts = copy.deepcopy(model.state_dict())  # store best weights
+    
+    # Generate version identifier using timestamp for model versioning
+    version_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # version string for model
 
     # Ensure that the output directory exists; create it if it does not
     os.makedirs(output_dir, exist_ok=True)  # ensure checkpoint directory exists
 
     # Log the directory where checkpoints will be saved
     logger.info(f"Model checkpoints will be saved to: {output_dir}")  # record checkpoint dir
+    logger.info(f"Model version: {version_timestamp}")  # record model version
 
     # Loop over the specified number of epochs
     for epoch in range(num_epochs):  # iterate over epochs
@@ -566,28 +576,70 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
                 mlflow.log_metric(f"{phase}_gpu_max_memory_allocated_mb", float(torch.cuda.max_memory_allocated() / (1024 ** 2)), step=epoch + 1)  # peak allocated
                 mlflow.log_metric(f"{phase}_gpu_max_memory_reserved_mb", float(torch.cuda.max_memory_reserved() / (1024 ** 2)), step=epoch + 1)  # peak reserved
 
-            # If this is the validation phase, check if accuracy is better than previous best
+            # If this is the validation phase, check if F1 score is better than previous best
             if phase == "val":  # validation phase check
-                # If the current validation accuracy is higher than best_acc, update best
-                if epoch_acc > best_acc:  # improved accuracy condition
-                    # Update best accuracy value
+                # Check if current F1 score is better than best (primary metric for model selection)
+                if f1 > best_f1:  # improved F1 condition
+                    # Update best F1 score
+                    best_f1 = f1  # store new best F1
+                    
+                    # Also update best accuracy for compatibility
                     best_acc = epoch_acc  # store new best accuracy
 
                     # Deep copy the model weights as the new best weights
                     best_model_wts = copy.deepcopy(model.state_dict())  # store best weights
 
-                    # Define the path to save the best model checkpoint
+                    # Define versioned model filename with timestamp and F1 score
+                    versioned_model_name = f"efficientnet_binary_v{version_timestamp}_f1_{f1:.4f}.pt"  # versioned model name
+                    versioned_model_path = os.path.join(output_dir, versioned_model_name)  # full path to versioned model
+                    
+                    # Also save as "best" for backward compatibility
                     best_model_path = os.path.join(output_dir, "best_efficientnet_binary.pt")  # path to best model file
 
-                    # Save the best model weights to disk
-                    torch.save(best_model_wts, best_model_path)  # write best weights to file
+                    # Save the best model weights to disk (versioned)
+                    torch.save(best_model_wts, versioned_model_path)  # write versioned weights to file
+                    torch.save(best_model_wts, best_model_path)  # write best weights to file (for backward compatibility)
+                    
+                    # Create metadata dictionary for this model version
+                    model_metadata = {
+                        "version": version_timestamp,
+                        "timestamp": datetime.now().isoformat(),
+                        "epoch": epoch + 1,
+                        "metrics": {
+                            "val_f1": float(f1),
+                            "val_acc": float(epoch_acc.item()) if hasattr(epoch_acc, "item") else float(epoch_acc),
+                            "val_precision": float(precision),
+                            "val_recall": float(recall),
+                            "val_specificity": float(specificity),
+                            "val_balanced_acc": float(balanced_acc),
+                            "val_mcc": float(mcc),
+                            "val_loss": float(epoch_loss)
+                        },
+                        "confusion_matrix": {
+                            "tp": int(tp),
+                            "tn": int(tn),
+                            "fp": int(fp),
+                            "fn": int(fn)
+                        },
+                        "model_file": versioned_model_name,
+                        "model_arch": "efficientnet_b0"
+                    }
+                    
+                    # Save metadata to JSON file
+                    metadata_filename = f"efficientnet_binary_v{version_timestamp}_metadata.json"  # metadata filename
+                    metadata_path = os.path.join(output_dir, metadata_filename)  # full path to metadata
+                    with open(metadata_path, 'w') as f:
+                        json.dump(model_metadata, f, indent=2)  # write metadata to JSON
 
-                    # Log that we achieved a new best validation accuracy
-                    logger.info(f"New best model saved with val acc: {best_acc:.4f} at {best_model_path}")  # record new best
+                    # Log that we achieved a new best validation F1 score
+                    logger.info(f"New best model saved with val F1: {best_f1:.4f}, val acc: {best_acc:.4f} at {versioned_model_path}")  # record new best
+                    logger.info(f"Model metadata saved to: {metadata_path}")  # record metadata file
 
-                    # Log best validation accuracy and checkpoint to MLflow
+                    # Log best validation metrics and checkpoint to MLflow
+                    mlflow.log_metric("best_val_f1", float(best_f1), step=epoch + 1)  # best val F1
                     mlflow.log_metric("best_val_acc", float(best_acc.item()) if hasattr(best_acc, "item") else float(best_acc), step=epoch + 1)  # best val acc
-                    mlflow.log_artifact(best_model_path, artifact_path="checkpoints")  # store best checkpoint
+                    mlflow.log_artifact(versioned_model_path, artifact_path="checkpoints")  # store versioned checkpoint
+                    mlflow.log_artifact(metadata_path, artifact_path="checkpoints")  # store metadata
 
         # Log that the epoch has completed
         logger.info(f"Epoch {epoch + 1}/{num_epochs} completed")  # mark epoch end
@@ -598,12 +650,15 @@ def train_model(model, dataloaders, criterion, optimizer, device, num_epochs, ou
     # Log the total training duration in minutes and seconds
     logger.info(f"Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s")  # elapsed time
 
-    # Log the best validation accuracy achieved
+    # Log the best validation metrics achieved
+    logger.info(f"Best validation F1 score: {best_f1:.4f}")  # best val F1
     logger.info(f"Best validation accuracy: {best_acc:.4f}")  # best val accuracy
 
     # Log final summary metrics to MLflow
+    mlflow.log_metric("final_best_val_f1", float(best_f1))  # final best val F1
     mlflow.log_metric("final_best_val_acc", float(best_acc.item()) if hasattr(best_acc, "item") else float(best_acc))  # final best val acc
     mlflow.log_metric("total_training_time_sec", float(time_elapsed))  # total training time
+    mlflow.log_param("model_version", version_timestamp)  # log model version
 
     # Load the best weights into the model before returning
     model.load_state_dict(best_model_wts)  # restore best model weights
@@ -703,18 +758,27 @@ def main():
         output_dir=OUTPUT_DIR    # directory to save checkpoints
     )  # trained model with best weights
 
-    # Define the path where the final trained model will be saved
-    final_model_path = os.path.join(OUTPUT_DIR, "final_efficientnet_binary.pt")  # final model path
+    # Get the model version from MLflow run
+    model_version = mlflow.get_run(mlflow.active_run().info.run_id).data.params.get("model_version", "unknown")  # retrieve version
+    
+    # Define the path where the final trained model will be saved (with version)
+    final_model_name = f"efficientnet_binary_v{model_version}_final.pt"  # versioned final model name
+    final_model_path = os.path.join(OUTPUT_DIR, final_model_name)  # final model path
+    
+    # Also save as "final" for backward compatibility
+    final_model_path_legacy = os.path.join(OUTPUT_DIR, "final_efficientnet_binary.pt")  # legacy final model path
 
     # Save the final trained model weights to disk
-    torch.save(trained_model.state_dict(), final_model_path)  # write final model weights
+    torch.save(trained_model.state_dict(), final_model_path)  # write versioned final model weights
+    torch.save(trained_model.state_dict(), final_model_path_legacy)  # write legacy final model weights
 
     # Log that the final model has been saved
     logger.info(f"Final model saved to: {final_model_path}")  # record final model file path
+    logger.info(f"Final model (legacy) saved to: {final_model_path_legacy}")  # record legacy final model file path
 
     # Log artifacts to MLflow
     mlflow.log_artifact(LOG_FILENAME, artifact_path="logs")  # store python logger output
-    mlflow.log_artifact(final_model_path, artifact_path="checkpoints")  # store final checkpoint
+    mlflow.log_artifact(final_model_path, artifact_path="checkpoints")  # store versioned final checkpoint
     mlflow.pytorch.log_model(trained_model, artifact_path="pytorch_model")  # store full model
 
     # End the MLflow run
