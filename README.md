@@ -9,7 +9,7 @@
 
 > Production-ready AI document verification system combining EfficientNet-B0, PaddleOCR, and RetinaFace for multi-stage EU Driving License authentication
 
-**🚀 95% end to end validation accuracy** • **🐳 Docker-ready** • **📊 MongoDB logging** • **🔒 3-stage verification** • **⚡ <2s inference**
+**🚀 95% end to end validation accuracy** • **🐳 Docker-ready** • **📊 MongoDB logging** • **🔒 3-stage verification** • **⚡ <2s inference** • **🔬 Optuna hyperparameter optimization**
 
 ---
 
@@ -18,7 +18,7 @@
 - **🎯 Multi-Modal AI Pipeline**: Deep learning → OCR → Face detection for robust verification
 - **🏢 Production-Ready**: FastAPI + Docker + MongoDB + Pytest with comprehensive logging
 - **⚡ High Performance**: 95% end to end validation accuracy, <2s per image, GPU/CPU auto-detection
-- **🔬 Full MLOps**: Experiment tracking, reproducible training, automated checkpointing
+- **🔬 Full MLOps**: Optuna hyperparameter optimization, experiment tracking, reproducible training, automated checkpointing
 - **🛡️ Secure & Scalable**: Thread-safe async inference, 8MB size limits, health checks
 - **📈 Well-Tested**: 3,866-image dataset, pytest integration suite, balanced class weighting
 
@@ -180,6 +180,7 @@ flowchart TD
 | **Inference Time** | <2 seconds/image |
 | **Model Size** | ~21 MB (EfficientNet-B0) |
 | **GPU Memory** | ~1.5 GB (training), ~500 MB (inference) |
+| **Hyperparameter Optimization** | 50 trials with Bayesian optimization |
 
 ### Dataset Composition
 
@@ -823,7 +824,7 @@ ls models/best_efficientnet_binary.pt
 ✅ **High Performance**: 95% end to end accuracy, <2s inference, GPU/CPU auto-detection  
 ✅ **Production-Grade Code**: Thread-safe async inference, health checks, error handling  
 ✅ **Well-Documented**: 875+ lines of comments in API, detailed README, setup guides  
-✅ **MLOps Best Practices**: Experiment tracking, reproducible training, automated checkpointing  
+✅ **MLOps Best Practices**: Optuna hyperparameter optimization, experiment tracking, reproducible training, automated checkpointing  
 ✅ **Security-First**: Input validation, size limits, non-root Docker user, schema validation  
 ✅ **Scalability**: Async MongoDB, threadpool executors, containerized deployment
 
