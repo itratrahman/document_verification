@@ -154,6 +154,7 @@ flowchart TD
 - **PaddleOCR** - Multilingual OCR engine for text extraction
 - **RetinaFace** - State-of-the-art face detection
 - **MLflow** - Experiment tracking and model registry
+- **Optuna** - Bayesian hyperparameter optimization
 
 ### Backend & API
 - **FastAPI** - Modern async REST API with automatic OpenAPI docs
@@ -337,9 +338,15 @@ data/
 
 **4. Train Model** (optional - pretrained weights included)
 ```bash
+# Standard training
 python model.py
 # Logs: logs/train_log.txt
 # Models: models/best_efficientnet_binary.pt
+
+# Hyperparameter optimization (50 trials)
+python model_optuna.py
+# Logs: logs/train_log_optuna.txt
+# Results: models/optuna_study_*.json
 ```
 
 **5. Configure MongoDB Credentials** (for inference logging)
@@ -359,7 +366,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ### Configuration
 
-Edit hyperparameters in [model.py](model.py) (lines 45-58):
+**Standard Training** - Edit hyperparameters in [model.py](model.py) (lines 45-58):
 ```python
 NUM_EPOCHS = 10           # Training epochs
 BATCH_SIZE = 32           # Batch size (reduce for low-memory GPUs)
@@ -367,6 +374,15 @@ LEARNING_RATE = 1e-4      # Adam optimizer learning rate
 VAL_SPLIT = 0.2           # Validation split (80/20)
 SEED = 42                 # Random seed for reproducibility
 ```
+
+**Hyperparameter Optimization** - [model_optuna.py](model_optuna.py) automatically optimizes:
+- Learning rate (log scale: 1e-5 to 1e-2)
+- Batch size (16, 32, 64, 128)
+- Dropout rate (0.0 to 0.5)
+- Weight decay (log scale: 1e-6 to 1e-3)
+- Optimizer type (Adam, AdamW, SGD)
+- Augmentation strength (0.5 to 1.5)
+- LR scheduler (StepLR, CosineAnnealingLR, ReduceLROnPlateau)
 
 ---
 
@@ -557,7 +573,8 @@ services:
 ```
 document_verification/
 ├── app.py                      # FastAPI server (~875 lines, production-ready)
-├── model.py                    # Training pipeline (~584 lines, MLflow integration)
+├── model.py                    # Training pipeline (~795 lines, MLflow integration)
+├── model_optuna.py             # Hyperparameter optimization (~790 lines, Optuna)
 ├── requirements.txt            # Python dependencies
 ├── Dockerfile                  # Multi-stage container build
 ├── docker-compose.yml          # Service orchestration
@@ -594,9 +611,10 @@ document_verification/
 - **Classification Head**: Linear(1,280 → 2 classes)
 
 **Training Configuration:**
-- **Optimizer**: Adam (lr=1e-4, β₁=0.9, β₂=0.999)
+- **Optimizer**: Adam (lr=1e-4, β₁=0.9, β₂=0.999) - configurable via Optuna
 - **Loss**: CrossEntropyLoss with class weight balancing
 - **Class Weights**: `total_samples / (num_classes × class_counts)`
+- **Hyperparameter Search**: Bayesian optimization with MedianPruner for early stopping
 
 **Data Augmentation (Training):**
 - Resize shorter side to 256px
@@ -614,6 +632,7 @@ document_verification/
 **Features:**
 - ✅ EfficientNet-B0 transfer learning with pretrained ImageNet weights
 - ✅ MLflow experiment tracking (hyperparameters, metrics, artifacts)
+- ✅ Bayesian hyperparameter optimization with Optuna (7 parameters, MedianPruner)
 - ✅ Inverse frequency class weighting for imbalanced datasets
 - ✅ Deterministic reproducibility (seeded Python, NumPy, PyTorch CPU/CUDA)
 - ✅ Multi-format support (PNG, JPG, JPEG, BMP, GIF, TIFF)

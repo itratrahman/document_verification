@@ -11,6 +11,7 @@ opencv-python
 retinaface-pytorch
 Pillow
 mlflow
+optuna
 fastapi
 uvicorn[standard]
 motor
