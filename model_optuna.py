@@ -81,10 +81,10 @@ else:  # local/server condition
 LOG_DIR = os.path.join(SCRIPT_DIR, "logs")  # logs directory relative to script
 
 # Define the number of trials for Optuna optimization
-N_TRIALS = 50  # number of hyperparameter configurations to test
+N_TRIALS = 20  # number of hyperparameter configurations to test
 
 # Define the number of epochs per trial (reduced for faster trials)
-NUM_EPOCHS = 5  # number of epochs per trial (can be increased for final optimization)
+NUM_EPOCHS = 10  # number of epochs per trial (can be increased for final optimization)
 
 # Define the base batch size (will be optimized)
 BATCH_SIZE = 32  # default batch size
