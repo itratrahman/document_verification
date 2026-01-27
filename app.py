@@ -249,9 +249,19 @@ def _load_best_model_by_f1(models_dir: str) -> Optional[str]:
                 with open(metadata_file, 'r') as f:
                     metadata = json.load(f)
                 
-                # Extract F1 score from metadata
-                f1_score = metadata.get("metrics", {}).get("val_f1", -1.0)
-                model_file = metadata.get("model_file", None)
+                # Extract F1 score from metadata - support both formats:
+                # 1. Optuna format: {"best_val_f1": X, "trial_number": Y, ...}
+                # 2. Legacy format: {"metrics": {"val_f1": X}, "model_file": "..."}
+                f1_score = metadata.get("best_val_f1", metadata.get("metrics", {}).get("val_f1", -1.0))
+                
+                # Determine model file based on metadata format
+                if "trial_number" in metadata:
+                    # Optuna format - construct model filename from trial number and F1
+                    trial_num = metadata["trial_number"]
+                    model_file = f"optuna_trial_{trial_num:03d}_f1_{f1_score:.4f}.pt"
+                else:
+                    # Legacy format - use model_file field
+                    model_file = metadata.get("model_file", None)
                 
                 if model_file and f1_score > best_f1:
                     # Construct full path to model file
@@ -272,8 +282,16 @@ def _load_best_model_by_f1(models_dir: str) -> Optional[str]:
         
         if best_model_path:
             logger.info(f"Selected best model with F1={best_f1:.4f}: {best_model_path}")
-            logger.info(f"Model version: {best_metadata.get('version', 'unknown')}")
-            logger.info(f"Model metrics: {best_metadata.get('metrics', {})}")
+            # Log additional metadata based on format
+            if "trial_number" in best_metadata:
+                # Optuna format metadata
+                logger.info(f"Optuna trial number: {best_metadata.get('trial_number')}")
+                logger.info(f"Hyperparameters: {best_metadata.get('hyperparameters', {})}")
+                logger.info(f"Training epochs: {best_metadata.get('num_epochs', 'unknown')}")
+            else:
+                # Legacy format metadata
+                logger.info(f"Model version: {best_metadata.get('version', 'unknown')}")
+                logger.info(f"Model metrics: {best_metadata.get('metrics', {})}")
             return best_model_path
         else:
             logger.warning("No valid model found with metadata")

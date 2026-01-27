@@ -625,6 +625,7 @@ def objective(trial, device):
     
     # Track best validation F1 for this trial
     best_val_f1 = 0.0
+    best_model_state = None  # store best model state dict for this trial
     
     # Training loop
     for epoch in range(NUM_EPOCHS):
@@ -641,9 +642,10 @@ def objective(trial, device):
             else:
                 scheduler.step()  # step based on epoch
         
-        # Track best F1
+        # Track best F1 and save best model state
         if val_f1 > best_val_f1:
             best_val_f1 = val_f1
+            best_model_state = copy.deepcopy(model.state_dict())  # save best model weights
         
         # Log epoch results
         logger.info(f"Trial {trial.number}, Epoch {epoch+1}/{NUM_EPOCHS}: "
@@ -660,6 +662,36 @@ def objective(trial, device):
     
     # Log trial completion
     logger.info(f"Trial {trial.number} completed with best val F1: {best_val_f1:.4f}")
+    
+    # Save the best model from this trial
+    if best_model_state is not None:
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        
+        # Create model filename with trial number and F1 score
+        model_filename = f"optuna_trial_{trial.number:03d}_f1_{best_val_f1:.4f}.pt"
+        model_path = os.path.join(OUTPUT_DIR, model_filename)
+        
+        # Save model state dict
+        torch.save(best_model_state, model_path)
+        logger.info(f"Trial {trial.number} model saved to: {model_path}")
+        
+        # Save metadata with hyperparameters
+        metadata = {
+            "trial_number": trial.number,
+            "best_val_f1": best_val_f1,
+            "hyperparameters": trial.params,
+            "num_epochs": NUM_EPOCHS,
+            "num_classes": num_classes,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        metadata_filename = f"optuna_trial_{trial.number:03d}_metadata.json"
+        metadata_path = os.path.join(OUTPUT_DIR, metadata_filename)
+        
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        logger.info(f"Trial {trial.number} metadata saved to: {metadata_path}")
     
     # Return best validation F1 score
     return best_val_f1

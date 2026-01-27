@@ -143,3 +143,6 @@ cred/*.json
 logs/
 mlruns/
 
+# html files
+*.html
+

@@ -344,10 +344,11 @@ python model.py
 # Logs: logs/train_log.txt
 # Models: models/best_efficientnet_binary.pt
 
-# Hyperparameter optimization (50 trials)
+# Hyperparameter optimization (20 trials)
 python model_optuna.py
 # Logs: logs/train_log_optuna.txt
 # Results: models/optuna_study_*.json
+# Models: models/optuna_trial_XXX_f1_Y.YYYY.pt (all trials saved)
 ```
 
 **5. Configure MongoDB Credentials** (for inference logging)
@@ -591,7 +592,9 @@ document_verification/
 │   └── truth_tables/           # Ground truth JSON annotations
 ├── models/
 │   ├── best_efficientnet_binary.pt   # Best validation checkpoint
-│   └── final_efficientnet_binary.pt  # Final epoch weights
+│   ├── final_efficientnet_binary.pt  # Final epoch weights
+│   ├── optuna_trial_XXX_f1_Y.YYYY.pt # Optuna trial models (all trials)
+│   └── optuna_trial_XXX_metadata.json # Trial hyperparameters
 ├── logs/
 │   └── train_log.txt           # Training history
 ├── tests/
@@ -667,22 +670,44 @@ mlflow ui --backend-store-uri ./mlruns
 ### Model Versioning
 
 **Automated Versioning Strategy:**
-- Models are saved with timestamp-based versions: `efficientnet_binary_v{YYYYMMDD_HHMMSS}_f1_{score}.pt`
-- Each model includes metadata JSON with validation metrics (F1, accuracy, precision, recall, etc.)
+
+Two versioning schemes depending on training method:
+
+1. **Standard Training** (model.py):
+   - Format: `efficientnet_binary_v{YYYYMMDD_HHMMSS}_f1_{score}.pt`
+   - Metadata: `efficientnet_binary_v{YYYYMMDD_HHMMSS}_metadata.json`
+   - Saves best validation checkpoint (based on F1 score) and final epoch weights
+   
+2. **Optuna Hyperparameter Optimization** (model_optuna.py):
+   - Format: `optuna_trial_{trial_number:03d}_f1_{score}.pt`
+   - Metadata: `optuna_trial_{trial_number:03d}_metadata.json`
+   - Saves all trial models (enables post-hoc analysis and model selection)
+
+**Common Features:**
 - Primary selection metric: **Validation F1 score** (better for imbalanced datasets than accuracy)
+- Metadata includes: F1, accuracy, precision, recall, specificity, confusion matrix, hyperparameters
+- Legacy compatibility: `best_efficientnet_binary.pt` and `final_efficientnet_binary.pt`
 
 **Files Generated:**
 ```
 models/
-├── efficientnet_binary_v20260115_143052_f1_0.9534.pt     # Versioned checkpoint
+├── efficientnet_binary_v20260115_143052_f1_0.9534.pt     # Standard training checkpoint
 ├── efficientnet_binary_v20260115_143052_metadata.json    # Performance metrics
+├── optuna_trial_000_f1_0.8523.pt                          # Optuna trial 0 model
+├── optuna_trial_000_metadata.json                         # Trial 0 hyperparameters
+├── optuna_trial_019_f1_0.9712.pt                          # Optuna trial 19 model (best)
+├── optuna_trial_019_metadata.json                         # Trial 19 hyperparameters
 ├── best_efficientnet_binary.pt                            # Symlink to best (legacy)
 └── final_efficientnet_binary.pt                           # Final epoch (legacy)
 ```
 
 **Model Selection at Inference:**
 - API automatically loads the model with highest validation F1 score from metadata files
-- Falls back to legacy checkpoints if no metadata found
+- Scans all metadata files (both standard training and Optuna trials) and selects best performer
+- Metadata format detection:
+  - Standard training: uses `metrics.val_f1` and `model_file` fields
+  - Optuna trials: uses `best_val_f1` and constructs filename from `trial_number`
+- Falls back to legacy checkpoints (`best_efficientnet_binary.pt`) if no metadata found
 - Manual model reload via `/reload-model` endpoint supported
 
 **MLflow Integration:**
